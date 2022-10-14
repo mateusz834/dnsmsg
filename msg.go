@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	errInvalidDNSMessage = errors.New("err ivnalid dns message")
+	errInvalidDNSMessage = errors.New("err invalid dns message")
 	errInvalidDNSName    = errors.New("invalid dns name")
 	errPtrLoop           = errors.New("dns compression pointer loop")
 	errDNSMsgTooLong     = errors.New("too long dns message, max supported length: 65535 Bytes")
