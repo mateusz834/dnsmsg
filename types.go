@@ -38,14 +38,19 @@ func (h *Header) unpack(msg []byte) (uint16, error) {
 	return headerLen, nil
 }
 
-type Question struct {
-	Name  MsgRawName
+type RawName []byte
+type nameConstraint interface {
+	[]byte | string | RawName | MsgRawName
+}
+
+type Question[T nameConstraint] struct {
+	Name  T
 	Type  Type
 	Class Class
 }
 
-type ResourceHeader struct {
-	Name   MsgRawName
+type ResourceHeader[T nameConstraint] struct {
+	Name   T
 	Type   Type
 	Class  Class
 	TTL    uint32

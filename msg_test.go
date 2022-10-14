@@ -84,7 +84,7 @@ func TestHeaderErr(t *testing.T) {
 
 var resourceHeaderTests = []struct {
 	msg []byte
-	hdr ResourceHeader
+	hdr ResourceHeader[MsgRawName]
 
 	err    error
 	offset uint16
@@ -98,7 +98,7 @@ var resourceHeaderTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, 1025)
 			return raw
 		}(),
-		hdr: ResourceHeader{
+		hdr: ResourceHeader[MsgRawName]{
 			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:   TypeA,
 			Class:  ClassIN,
@@ -118,7 +118,7 @@ var resourceHeaderTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		hdr: ResourceHeader{
+		hdr: ResourceHeader[MsgRawName]{
 			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:   TypeA,
 			Class:  ClassIN,
@@ -189,7 +189,7 @@ func TestResourceHeader(t *testing.T) {
 
 var questionTests = []struct {
 	msg []byte
-	q   Question
+	q   Question[MsgRawName]
 
 	err    error
 	offset uint16
@@ -201,7 +201,7 @@ var questionTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, uint16(ClassIN))
 			return raw
 		}(),
-		q: Question{
+		q: Question[MsgRawName]{
 			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:  TypeA,
 			Class: ClassIN,
@@ -217,7 +217,7 @@ var questionTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		q: Question{
+		q: Question[MsgRawName]{
 			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:  TypeA,
 			Class: ClassIN,

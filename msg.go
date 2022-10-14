@@ -56,8 +56,8 @@ func (m *Msg) Header() (Header, error) {
 	return hdr, err
 }
 
-func (m *Msg) Question() (Question, error) {
-	q := Question{
+func (m *Msg) Question() (Question[MsgRawName], error) {
+	q := Question[MsgRawName]{
 		Name: MsgRawName{
 			m:         m,
 			nameStart: m.curOffset,
@@ -66,13 +66,13 @@ func (m *Msg) Question() (Question, error) {
 
 	err := q.Name.unpack()
 	if err != nil {
-		return Question{}, err
+		return Question[MsgRawName]{}, err
 	}
 
 	tmpOffset := m.curOffset + uint16(q.Name.NoFollowLen())
 
 	if len(m.msg[tmpOffset:]) < 4 {
-		return Question{}, errInvalidDNSMessage
+		return Question[MsgRawName]{}, errInvalidDNSMessage
 	}
 
 	q.Type = Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2]))
@@ -82,8 +82,8 @@ func (m *Msg) Question() (Question, error) {
 	return q, nil
 }
 
-func (m *Msg) ResourceHeader() (ResourceHeader, error) {
-	q := ResourceHeader{
+func (m *Msg) ResourceHeader() (ResourceHeader[MsgRawName], error) {
+	q := ResourceHeader[MsgRawName]{
 		Name: MsgRawName{
 			m:         m,
 			nameStart: m.curOffset,
@@ -92,13 +92,13 @@ func (m *Msg) ResourceHeader() (ResourceHeader, error) {
 
 	err := q.Name.unpack()
 	if err != nil {
-		return ResourceHeader{}, err
+		return ResourceHeader[MsgRawName]{}, err
 	}
 
 	tmpOffset := m.curOffset + uint16(q.Name.NoFollowLen())
 
 	if len(m.msg[tmpOffset:]) < 10 {
-		return ResourceHeader{}, errInvalidDNSMessage
+		return ResourceHeader[MsgRawName]{}, errInvalidDNSMessage
 	}
 
 	q.Type = Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2]))
