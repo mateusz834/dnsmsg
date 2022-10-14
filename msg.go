@@ -260,7 +260,6 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 			return true
 		}
 
-		//TODO: can the uint16 overflow here?
 		if !equal(m.m.msg[im1:im1+uint16(m.m.msg[im1])], m2.m.msg[im2:im2+uint16(m2.m.msg[im2])]) {
 			return false
 		}
@@ -318,7 +317,7 @@ func (m *MsgRawName) unpack() error {
 	nameLen := uint16(0)
 	ptrCount := uint8(0)
 
-	for i := m.nameStart; i < uint16(len(m.m.msg)); {
+	for i := int(m.nameStart); i < len(m.m.msg); {
 		// Compression pointer
 		if m.m.msg[i]&0xC0 == 0xC0 {
 			if ptrCount++; ptrCount > ptrLoopCount {
@@ -327,7 +326,7 @@ func (m *MsgRawName) unpack() error {
 			}
 
 			if m.lenNoPtr == 0 {
-				m.lenNoPtr = uint8(i-m.nameStart) + 2
+				m.lenNoPtr = uint8(i-int(m.nameStart)) + 2
 			}
 
 			if len(m.m.msg) == int(i)+1 {
@@ -335,7 +334,7 @@ func (m *MsgRawName) unpack() error {
 				return errInvalidDNSName
 			}
 
-			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			i = int(uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1]))
 			continue
 		}
 
@@ -351,15 +350,14 @@ func (m *MsgRawName) unpack() error {
 
 		if m.m.msg[i] == 0 {
 			if m.lenNoPtr == 0 {
-				m.lenNoPtr = uint8(i-m.nameStart) + 1
+				m.lenNoPtr = uint8(i-int(m.nameStart)) + 1
 			}
 
 			return nil
 		}
 
 		nameLen += uint16(m.m.msg[i])
-		//TODO: reconsider the use of uint16, we might easly overflow
-		i += uint16(m.m.msg[i]) + 1
+		i += int(m.m.msg[i]) + 1
 	}
 
 	m.lenNoPtr = 0
