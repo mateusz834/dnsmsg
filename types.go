@@ -1,5 +1,17 @@
 package parser
 
+type Type uint16
+
+const (
+	TypeA Type = 1
+)
+
+type Class uint16
+
+const (
+	ClassIN Class = 1
+)
+
 type Header struct {
 	ID      uint16
 	Flags   Flags

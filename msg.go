@@ -9,9 +9,10 @@ var (
 	errInvalidDNSMessage = errors.New("err ivnalid dns message")
 	errInvalidDNSName    = errors.New("invalid dns name")
 	errPtrLoop           = errors.New("dns compression pointer loop")
+	errDNSMsgTooLong     = errors.New("too long dns message, max supported length: 65535 Bytes")
 )
 
-//TODO: use binary.BigEndian in entire package
+//TODO: use binary.BigEndian in entire package (because of lower cost (golang/go#42958)) (but probably after golang/go#54097 gets fixed)
 
 func unpackUint16(b []byte) uint16 {
 	return uint16(b[0])<<8 | uint16(b[1])
@@ -20,22 +21,6 @@ func unpackUint16(b []byte) uint16 {
 func unpackUint32(b []byte) uint32 {
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
-
-type Type uint16
-
-const (
-	TypeA Type = 1
-)
-
-type Class uint16
-
-const (
-	ClassIN Class = 1
-)
-
-var (
-	errDNSMsgTooLong = errors.New("too long dns message, max supported length: 65535 Bytes")
-)
 
 func NewMsg(msg []byte) (Msg, error) {
 	if len(msg) > math.MaxUint16 {
