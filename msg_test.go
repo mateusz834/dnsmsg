@@ -82,14 +82,9 @@ func TestHeaderErr(t *testing.T) {
 	}
 }
 
-type testResourceHeader struct {
-	Name []byte
-	ResourceHeader
-}
-
 var resourceHeaderTests = []struct {
 	msg []byte
-	hdr testResourceHeader
+	hdr ResourceHeader
 
 	err    error
 	offset uint16
@@ -103,14 +98,12 @@ var resourceHeaderTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, 1025)
 			return raw
 		}(),
-		hdr: testResourceHeader{
-			Name: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
-			ResourceHeader: ResourceHeader{
-				Type:   TypeA,
-				Class:  ClassIN,
-				TTL:    11111111,
-				Length: 1025,
-			},
+		hdr: ResourceHeader{
+			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+			Type:   TypeA,
+			Class:  ClassIN,
+			TTL:    11111111,
+			Length: 1025,
 		},
 		offset: 18,
 	},
@@ -125,14 +118,12 @@ var resourceHeaderTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		hdr: testResourceHeader{
-			Name: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
-			ResourceHeader: ResourceHeader{
-				Type:   TypeA,
-				Class:  ClassIN,
-				TTL:    11111111,
-				Length: 1025,
-			},
+		hdr: ResourceHeader{
+			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+			Type:   TypeA,
+			Class:  ClassIN,
+			TTL:    11111111,
+			Length: 1025,
 		},
 		offset: 15,
 	},
@@ -184,11 +175,9 @@ func TestResourceHeader(t *testing.T) {
 			continue
 		}
 
-		//TODO: maybe we can use the Equal() method here and remove the weird TestResourceHeader struct
-		rawName := rh.Name.rawName()
-		if !(bytes.Equal(rawName, v.hdr.Name) && rh.Type == v.hdr.Type && rh.Class == v.hdr.Class && rh.TTL == v.hdr.TTL && rh.Length == v.hdr.Length) {
+		if !(rh.Name.Equal(&rh.Name) && rh.Type == v.hdr.Type && rh.Class == v.hdr.Class && rh.TTL == v.hdr.TTL && rh.Length == v.hdr.Length) {
 			expect := fmt.Sprintf("{Name: %v, Type: %v, Class: %v, TTL: %v, Length: %v}", v.hdr.Name, v.hdr.Type, v.hdr.Class, v.hdr.TTL, v.hdr.Length)
-			got := fmt.Sprintf("{Name: %v, Type: %v, Class: %v, TTL: %v, Length: %v}", rawName, rh.Type, rh.Class, rh.TTL, rh.Length)
+			got := fmt.Sprintf("{Name: %v, Type: %v, Class: %v, TTL: %v, Length: %v}", rh.Name, rh.Type, rh.Class, rh.TTL, rh.Length)
 			t.Errorf("%v expected: %v, but got: %v", prefix, expect, got)
 		}
 
@@ -198,14 +187,9 @@ func TestResourceHeader(t *testing.T) {
 	}
 }
 
-type testQuestion struct {
-	Name []byte
-	Question
-}
-
 var questionTests = []struct {
 	msg []byte
-	q   testQuestion
+	q   Question
 
 	err    error
 	offset uint16
@@ -217,12 +201,10 @@ var questionTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, uint16(ClassIN))
 			return raw
 		}(),
-		q: testQuestion{
-			Name: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
-			Question: Question{
-				Type:  TypeA,
-				Class: ClassIN,
-			},
+		q: Question{
+			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+			Type:  TypeA,
+			Class: ClassIN,
 		},
 		offset: 12,
 	},
@@ -235,12 +217,10 @@ var questionTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		q: testQuestion{
-			Name: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
-			Question: Question{
-				Type:  TypeA,
-				Class: ClassIN,
-			},
+		q: Question{
+			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+			Type:  TypeA,
+			Class: ClassIN,
 		},
 		offset: 9,
 	},
@@ -288,10 +268,9 @@ func TestQuestion(t *testing.T) {
 			continue
 		}
 
-		rawName := q.Name.rawName()
-		if !(bytes.Equal(rawName, v.q.Name) && q.Type == v.q.Type && q.Class == v.q.Class) {
+		if !(q.Name.Equal(&q.Name) && q.Type == v.q.Type && q.Class == v.q.Class) {
 			expect := fmt.Sprintf("{Name: %v, Type: %v, Class: %v}", v.q.Name, v.q.Type, v.q.Class)
-			got := fmt.Sprintf("{Name: %v, Type: %v, Class: %v}", rawName, q.Type, q.Class)
+			got := fmt.Sprintf("{Name: %v, Type: %v, Class: %v}", q.Name, q.Type, q.Class)
 			t.Errorf("%v expected: %v, but got: %v", prefix, expect, got)
 		}
 
