@@ -326,28 +326,15 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 // len(a) must be equal to len(b)
 func equalNoDot[T1 []byte | string, T2 []byte | string](a T1, b T2) bool {
 	for i := 0; i < len(a); i++ {
-		if !equalASCIICaseInsensitiveNoDot(a[i], b[i]) {
+		if a[i] == '.' {
+			return false
+		}
+
+		if !equalASCIICaseInsensitive(a[i], b[i]) {
 			return false
 		}
 	}
 	return true
-}
-
-func equalASCIICaseInsensitiveNoDot(a, b byte) bool {
-	if a == '.' {
-		return false
-	}
-
-	const caseDiff = 'a' - 'A'
-	if a >= 'a' && a <= 'z' {
-		a -= caseDiff
-	}
-
-	if b >= 'a' && b <= 'z' {
-		b -= caseDiff
-	}
-
-	return a == b
 }
 
 // len(a) must be equal to len(b)
