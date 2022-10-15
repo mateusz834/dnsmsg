@@ -260,7 +260,7 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 			return true
 		}
 
-		if !equal(m.m.msg[im1:im1+uint16(m.m.msg[im1])], m2.m.msg[im2:im2+uint16(m2.m.msg[im2])]) {
+		if !equal(m.m.msg[im1+1:im1+1+uint16(m.m.msg[im1])], m2.m.msg[im2+1:im2+1+uint16(m2.m.msg[im2])]) {
 			return false
 		}
 

@@ -939,6 +939,15 @@ var nameEqualTests = []struct {
 		}, 0, 5),
 		equal: false,
 	},
+
+	{
+		name: "(same msg) (no pointers) two separate different names (diffrent label ending character)",
+		names: prepNameSameMsg([]byte{
+			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
+			2, 'g', 'l', 3, 'd', 'e', 'v', 0,
+		}, 0, 8),
+		equal: false,
+	},
 }
 
 func TestNameEqual(t *testing.T) {
