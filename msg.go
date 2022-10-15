@@ -279,43 +279,14 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 
 // Equal reports whether m and a human encoded name m2 represents the same name.
 func (m *MsgRawName) EqualString(m2 string) bool {
-	im1 := m.nameStart
-
-	for {
-		// Resolve all (in a row) compression pointers of m
-		for m.m.msg[im1]&0xC0 == 0xC0 {
-			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
-		}
-
-		labelLength := m.m.msg[im1]
-
-		if labelLength == 0 && len(m2) == 0 {
-			return true
-		}
-
-		if len(m2) < int(labelLength) {
-			return false
-		}
-
-		if !equal(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
-			return false
-		}
-
-		im1 += uint16(m.m.msg[im1]) + 1
-
-		if len(m2) > int(labelLength) {
-			if m2[labelLength] != '.' {
-				return false
-			}
-			m2 = m2[labelLength+1:]
-			continue
-		}
-
-		m2 = ""
-	}
+	return equalHumanEncodedName(m, m2)
 }
 
 func (m *MsgRawName) EqualBytes(m2 []byte) bool {
+	return equalHumanEncodedName(m, m2)
+}
+
+func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 	im1 := m.nameStart
 
 	for {
@@ -344,11 +315,14 @@ func (m *MsgRawName) EqualBytes(m2 []byte) bool {
 			if m2[labelLength] != '.' {
 				return false
 			}
+
 			m2 = m2[labelLength+1:]
 			continue
 		}
 
-		m2 = []byte{}
+		//set m2 to zero value
+		var zero T
+		m2 = zero
 	}
 }
 
