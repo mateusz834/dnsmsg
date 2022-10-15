@@ -269,8 +269,91 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 	}
 }
 
+//FIX: issues in EqualString/EqualBytes:
+
+//TODO: we are assuming here that the name (m2) is a valid name, but it does not have to be
+//TODO: decide how to handle that
+
+//TODO: what should happen when there are dots in the raw dns name, we do not handle that yet
+//TODO: and it will cause something like that []byte{3 '.' '.' '.' 0} to be equal to "..."
+
+// Equal reports whether m and a human encoded name m2 represents the same name.
+func (m *MsgRawName) EqualString(m2 string) bool {
+	im1 := m.nameStart
+
+	for {
+		// Resolve all (in a row) compression pointers of m
+		for m.m.msg[im1]&0xC0 == 0xC0 {
+			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
+		}
+
+		labelLength := m.m.msg[im1]
+
+		if labelLength == 0 && len(m2) == 0 {
+			return true
+		}
+
+		if len(m2) < int(labelLength) {
+			return false
+		}
+
+		if !equal(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
+			return false
+		}
+
+		im1 += uint16(m.m.msg[im1]) + 1
+
+		if len(m2) > int(labelLength) {
+			if m2[labelLength] != '.' {
+				return false
+			}
+			m2 = m2[labelLength+1:]
+			continue
+		}
+
+		m2 = ""
+	}
+}
+
+func (m *MsgRawName) EqualBytes(m2 []byte) bool {
+	im1 := m.nameStart
+
+	for {
+		// Resolve all (in a row) compression pointers of m
+		for m.m.msg[im1]&0xC0 == 0xC0 {
+			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
+		}
+
+		labelLength := m.m.msg[im1]
+
+		if labelLength == 0 && len(m2) == 0 {
+			return true
+		}
+
+		if len(m2) < int(labelLength) {
+			return false
+		}
+
+		if !equal(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
+			return false
+		}
+
+		im1 += uint16(m.m.msg[im1]) + 1
+
+		if len(m2) > int(labelLength) {
+			if m2[labelLength] != '.' {
+				return false
+			}
+			m2 = m2[labelLength+1:]
+			continue
+		}
+
+		m2 = []byte{}
+	}
+}
+
 // len(a) must be equal to len(b)
-func equal(a, b []byte) bool {
+func equal[T1 []byte | string, T2 []byte | string](a T1, b T2) bool {
 	for i := 0; i < len(a); i++ {
 		if !equalASCIICaseInsensitive(a[i], b[i]) {
 			return false
@@ -370,12 +453,4 @@ func (m *MsgRawName) AppendHumanName(a []byte) []byte {
 
 func (m *MsgRawName) NoFollowLen() uint8 {
 	return m.lenNoPtr
-}
-
-func (r *MsgRawName) EqualString(name string) bool {
-	return false
-}
-
-func (r *MsgRawName) EqualBytes(name []byte) bool {
-	return false
 }

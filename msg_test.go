@@ -475,6 +475,25 @@ func newMsgRawName(buf []byte) MsgRawName {
 	return name
 }
 
+func newMsgRawNameOffset(buf []byte, off uint16) MsgRawName {
+	msg, err := NewMsg(buf)
+	if err != nil {
+		panic(err)
+	}
+
+	name := MsgRawName{
+		m:         &msg,
+		nameStart: off,
+	}
+
+	err = name.unpack()
+	if err != nil {
+		panic(err)
+	}
+
+	return name
+}
+
 func TestResource(t *testing.T) {
 	for i, v := range resourceTests {
 		prefix := fmt.Sprintf("%v: %T: %v", i, v.res, v.msg)
@@ -1000,5 +1019,98 @@ func BenchmarkEqualSameMsgDirectCompressionPointer(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		names[0].Equal(&names[1])
+	}
+}
+
+var nameEqualStringTests = []struct {
+	msgRawName MsgRawName
+	name       string
+
+	eq bool
+}{
+	{
+		msgRawName: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "go.dev",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0}),
+		name:       "gO.DEv",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "www.go.dev",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "imap.go.dev",
+		eq:         false,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "sth.go.dev",
+		eq:         false,
+	},
+
+	{
+		msgRawName: newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		name:       "www.go.dev",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		name:       "wwW.go.dEv",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		name:       "wwR.go.dEv",
+		eq:         false,
+	},
+
+	{
+		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		name:       "wwww.go.dEv",
+		eq:         false,
+	},
+
+	{
+		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		name:       "www.golang.org",
+		eq:         false,
+	},
+}
+
+func TestNameEqualString(t *testing.T) {
+	for i, v := range nameEqualStringTests {
+		for _, vappend := range []string{"", "."} {
+			name := v.name + vappend
+			prefix := fmt.Sprintf("%v: %v: ", i, name)
+
+			if eq := v.msgRawName.EqualString(name); eq != v.eq {
+				t.Errorf("%v expected: %v, but: %v", prefix, v.eq, eq)
+			}
+		}
+	}
+}
+
+func TestNameEqualBytes(t *testing.T) {
+	for i, v := range nameEqualStringTests {
+		for _, vappend := range []string{"", "."} {
+			name := []byte(v.name + vappend)
+			prefix := fmt.Sprintf("%v: %v: ", i, name)
+
+			if eq := v.msgRawName.EqualBytes(name); eq != v.eq {
+				t.Errorf("%v expected: %v, but: %v", prefix, v.eq, eq)
+			}
+		}
 	}
 }
