@@ -1114,3 +1114,21 @@ func TestNameEqualBytes(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkEqualString(b *testing.B) {
+	name := newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name.EqualString("www.go.dev.")
+	}
+}
+
+func BenchmarkEqualBytes(b *testing.B) {
+	name := newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name.EqualBytes([]byte("www.go.dev."))
+	}
+}
