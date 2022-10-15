@@ -1087,6 +1087,12 @@ var nameEqualStringTests = []struct {
 		name:       "www.golang.org",
 		eq:         false,
 	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, '.', '.', '.', 0}),
+		name:       "...",
+		eq:         false,
+	},
 }
 
 func TestNameEqualString(t *testing.T) {

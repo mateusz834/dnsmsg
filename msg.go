@@ -274,9 +274,6 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 //TODO: we are assuming here that the name (m2) is a valid name, but it does not have to be
 //TODO: decide how to handle that
 
-//TODO: what should happen when there are dots in the raw dns name, we do not handle that yet
-//TODO: and it will cause something like that []byte{3 '.' '.' '.' 0} to be equal to "..."
-
 // Equal reports whether m and a human encoded name m2 represents the same name.
 func (m *MsgRawName) EqualString(m2 string) bool {
 	return equalHumanEncodedName(m, m2)
@@ -305,7 +302,7 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 			return false
 		}
 
-		if !equal(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
+		if !equalNoDot(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
 			return false
 		}
 
@@ -324,6 +321,33 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 		var zero T
 		m2 = zero
 	}
+}
+
+// len(a) must be equal to len(b)
+func equalNoDot[T1 []byte | string, T2 []byte | string](a T1, b T2) bool {
+	for i := 0; i < len(a); i++ {
+		if !equalASCIICaseInsensitiveNoDot(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalASCIICaseInsensitiveNoDot(a, b byte) bool {
+	if a == '.' {
+		return false
+	}
+
+	const caseDiff = 'a' - 'A'
+	if a >= 'a' && a <= 'z' {
+		a -= caseDiff
+	}
+
+	if b >= 'a' && b <= 'z' {
+		b -= caseDiff
+	}
+
+	return a == b
 }
 
 // len(a) must be equal to len(b)
