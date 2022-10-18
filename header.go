@@ -1,4 +1,4 @@
-package parser
+package dnsmsg
 
 const (
 	defaultQueryFlags Flags = bitRD

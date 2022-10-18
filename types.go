@@ -1,4 +1,4 @@
-package parser
+package dnsmsg
 
 type Type uint16
 
