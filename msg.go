@@ -289,14 +289,12 @@ func (m *MsgRawName) EqualBytes(m2 []byte) bool {
 
 func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 	im1 := m.nameStart
+
 	if len(m2) == 1 && m2[0] == '.' {
 		for m.m.msg[im1]&0xC0 == 0xC0 {
 			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
 		}
-
-		if m.m.msg[im1] == 0 {
-			return true
-		}
+		return m.m.msg[im1] == 0
 	}
 
 	for {
