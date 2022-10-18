@@ -1023,11 +1023,32 @@ func BenchmarkEqualSameMsgDirectCompressionPointer(b *testing.B) {
 }
 
 var nameEqualStringTests = []struct {
-	msgRawName MsgRawName
-	name       string
+	msgRawName  MsgRawName
+	name        string
+	noAppendDot bool
 
 	eq bool
 }{
+	{
+		msgRawName:  newMsgRawName([]byte{0}),
+		name:        ".",
+		noAppendDot: true,
+		eq:          true,
+	},
+
+	{
+		msgRawName:  newMsgRawName([]byte{0xC0, 3, 32, 0}),
+		name:        ".",
+		noAppendDot: true,
+		eq:          true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name:       "com",
+		eq:         true,
+	},
+
 	{
 		msgRawName: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "go.dev",
@@ -1141,11 +1162,22 @@ var nameEqualStringTests = []struct {
 		name:       "\\256",
 		eq:         false,
 	},
+
+	{
+		msgRawName:  newMsgRawName([]byte{0}),
+		name:        "\\.",
+		noAppendDot: true,
+		eq:          false,
+	},
 }
 
 func TestNameEqualString(t *testing.T) {
 	for i, v := range nameEqualStringTests {
 		for _, vappend := range []string{"", "."} {
+			if v.noAppendDot && vappend == "." {
+				continue
+			}
+
 			name := v.name + vappend
 			prefix := fmt.Sprintf("%v: %v: ", i, name)
 
@@ -1159,6 +1191,10 @@ func TestNameEqualString(t *testing.T) {
 func TestNameEqualBytes(t *testing.T) {
 	for i, v := range nameEqualStringTests {
 		for _, vappend := range []string{"", "."} {
+			if v.noAppendDot && vappend == "." {
+				continue
+			}
+
 			name := []byte(v.name + vappend)
 			prefix := fmt.Sprintf("%v: %v: ", i, name)
 
@@ -1185,4 +1221,62 @@ func BenchmarkEqualBytes(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		name.EqualBytes([]byte("www.go.dev."))
 	}
+}
+
+func FuzzEqualString(f *testing.F) {
+	for _, v := range nameEqualStringTests {
+		f.Add(v.msgRawName.m.msg, v.msgRawName.nameStart, v.name)
+
+		if !v.noAppendDot {
+			f.Add(v.msgRawName.m.msg, v.msgRawName.nameStart, v.name+".")
+		}
+	}
+
+	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 string) {
+		msg, err := NewMsg(a)
+		if err != nil {
+			return
+		}
+
+		name := MsgRawName{
+			m:         &msg,
+			nameStart: nameStart,
+		}
+
+		err = name.unpack()
+		if err != nil {
+			return
+		}
+
+		name.EqualString(name2)
+	})
+}
+
+func FuzzEqualBytes(f *testing.F) {
+	for _, v := range nameEqualStringTests {
+		f.Add(v.msgRawName.m.msg, v.msgRawName.nameStart, []byte(v.name))
+
+		if !v.noAppendDot {
+			f.Add(v.msgRawName.m.msg, v.msgRawName.nameStart, []byte(v.name+"."))
+		}
+	}
+
+	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 []byte) {
+		msg, err := NewMsg(a)
+		if err != nil {
+			return
+		}
+
+		name := MsgRawName{
+			m:         &msg,
+			nameStart: nameStart,
+		}
+
+		err = name.unpack()
+		if err != nil {
+			return
+		}
+
+		name.EqualBytes(name2)
+	})
 }
