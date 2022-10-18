@@ -347,8 +347,12 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 						return false
 					}
 
-					//TODO: possible overflow here hwo to handle that?
-					char = (nextChar-'0')*100 + (m2[m2Offset]-'0')*10 + (m2[m2Offset+1] - '0')
+					tmp := uint16(nextChar-'0')*100 + uint16(m2[m2Offset]-'0')*10 + uint16(m2[m2Offset+1]-'0')
+					if tmp > math.MaxUint8 {
+						return false
+					}
+
+					char = byte(tmp)
 					m2Offset += 2
 				default:
 					// RFC 1035:

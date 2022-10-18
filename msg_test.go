@@ -1135,6 +1135,12 @@ var nameEqualStringTests = []struct {
 		name:       "w\\087w.\\103o.d\\101v", // wWw.go.dev
 		eq:         true,
 	},
+
+	{
+		msgRawName: newMsgRawName([]byte{1, 0, 0}),
+		name:       "\\256",
+		eq:         false,
+	},
 }
 
 func TestNameEqualString(t *testing.T) {
