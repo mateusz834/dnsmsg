@@ -1089,9 +1089,51 @@ var nameEqualStringTests = []struct {
 	},
 
 	{
+		msgRawName: newMsgRawName([]byte{1, '\\', 0}),
+		name:       "\\",
+		eq:         false,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{1, '\\', 0}),
+		name:       "\\\\",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', '.', 'w', 0}),
+		name:       "w.w",
+		eq:         false,
+	},
+	{
 		msgRawName: newMsgRawName([]byte{3, '.', '.', '.', 0}),
 		name:       "...",
 		eq:         false,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{3, '.', '.', '.', 0}),
+		name:       "\\.\\.\\.",
+		eq:         true,
+	},
+
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "w\\.w.go.dev",
+		eq:         true,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "w\\\\w.go.dev",
+		eq:         true,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "w\\ww.g\\o.\\dev",
+		eq:         true,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:       "w\\087w.\\103o.d\\101v", // wWw.go.dev
+		eq:         true,
 	},
 }
 

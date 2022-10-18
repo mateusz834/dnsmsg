@@ -275,10 +275,14 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 //TODO: decide how to handle that
 
 // Equal reports whether m and a human encoded name m2 represents the same name.
+// m2 must be a valid dns name. Special symbols (in m2) can be encoded using
+// escaping techniques, like: '\.', '\\', '\046'.
 func (m *MsgRawName) EqualString(m2 string) bool {
 	return equalHumanEncodedName(m, m2)
 }
 
+// Equal reports whether m and a human encoded name m2 represents the same name.
+// See EqualString for more information.
 func (m *MsgRawName) EqualBytes(m2 []byte) bool {
 	return equalHumanEncodedName(m, m2)
 }
@@ -302,18 +306,78 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 			return false
 		}
 
-		if !equalNoDot(m.m.msg[im1+1:im1+1+uint16(labelLength)], m2[:labelLength]) {
-			return false
+		rawLabel := m.m.msg[im1+1 : im1+1+uint16(labelLength)]
+		m2Offset := 0
+
+		for i := 0; i < len(rawLabel); i++ {
+			var escaped bool
+
+			if len(m2[m2Offset:]) == 0 {
+				return false
+			}
+
+			char := m2[m2Offset]
+			m2Offset++
+
+			if char == '\\' {
+				escaped = true
+
+				if len(m2[m2Offset:]) == 0 {
+					return false
+				}
+
+				nextChar := m2[m2Offset]
+				m2Offset++
+
+				switch {
+				case nextChar >= '0' && nextChar <= '9':
+					// RFC 1035:
+					// \DDD where each D is a digit is the octet corresponding to
+					// the decimal number described by DDD.  The resulting
+					// octet is assumed to be text and is not checked for
+					// special meaning.
+
+					// invalid encoding
+					if len(m2[m2Offset:]) < 2 {
+						return false
+					}
+
+					//Second or third charecter is not a digit
+					if m2[m2Offset] < '0' || m2[m2Offset] > '9' || m2[m2Offset+1] < '0' || m2[m2Offset+1] > '9' {
+						return false
+					}
+
+					//TODO: possible overflow here hwo to handle that?
+					char = (nextChar-'0')*100 + (m2[m2Offset]-'0')*10 + (m2[m2Offset+1] - '0')
+					m2Offset += 2
+				default:
+					// RFC 1035:
+					// \X where X is any character other than a digit (0-9), is
+					// used to quote that character so that its special meaning
+					// does not apply.  For example, "\." can be used to place
+					// a dot character in a label.
+					char = nextChar
+				}
+			}
+
+			// if char is not escaped, we can't have dot inside label
+			if !escaped && char == '.' {
+				return false
+			}
+
+			if !equalASCIICaseInsensitive(rawLabel[i], char) {
+				return false
+			}
 		}
 
 		im1 += uint16(m.m.msg[im1]) + 1
 
-		if len(m2) > int(labelLength) {
-			if m2[labelLength] != '.' {
+		if len(m2) > int(m2Offset) {
+			if m2[m2Offset] != '.' {
 				return false
 			}
 
-			m2 = m2[labelLength+1:]
+			m2 = m2[m2Offset+1:]
 			continue
 		}
 
@@ -321,20 +385,6 @@ func equalHumanEncodedName[T []byte | string](m *MsgRawName, m2 T) bool {
 		var zero T
 		m2 = zero
 	}
-}
-
-// len(a) must be equal to len(b)
-func equalNoDot[T1 []byte | string, T2 []byte | string](a T1, b T2) bool {
-	for i := 0; i < len(a); i++ {
-		if a[i] == '.' {
-			return false
-		}
-
-		if !equalASCIICaseInsensitive(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
 }
 
 // len(a) must be equal to len(b)
