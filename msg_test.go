@@ -1169,6 +1169,17 @@ var nameEqualStringTests = []struct {
 		noAppendDot: true,
 		eq:          false,
 	},
+
+	{
+		msgRawName: newMsgRawName([]byte{1, 7, 0}),
+		name:       "\\07",
+		eq:         false,
+	},
+	{
+		msgRawName: newMsgRawName([]byte{1, 0, 0}),
+		name:       "\\0",
+		eq:         false,
+	},
 }
 
 func TestNameEqualString(t *testing.T) {
