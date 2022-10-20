@@ -1291,3 +1291,47 @@ func FuzzEqualBytes(f *testing.F) {
 		name.EqualBytes(name2)
 	})
 }
+
+var stringTests = []struct {
+	name MsgRawName
+	out  string
+}{
+	{
+		name: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		out:  "go.dev.",
+	},
+
+	{
+		name: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		out:  "www.go.dev.",
+	},
+
+	{
+		name: newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		out:  "www.go.dev.",
+	},
+
+	{
+		name: newMsgRawName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		out:  "w\\.w.go.dev.",
+	},
+	{
+		name: newMsgRawName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		out:  "w\\\\w.go.dev.",
+	},
+
+	{
+		name: newMsgRawName([]byte{4, 3, 'w', 32, 'w', 4, 'w', 127, 'w', 255, 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		out:  "\\003w\\032w.w\\127w\\255.go.dev.",
+	},
+}
+
+func TestString(t *testing.T) {
+	for i, v := range stringTests {
+		prefix := fmt.Sprintf("%v: %v: ", i, v.out)
+
+		if str := v.name.String(); str != v.out {
+			t.Errorf("%v expected %v, but got %v", prefix, v.out, str)
+		}
+	}
+}

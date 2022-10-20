@@ -3,6 +3,7 @@ package dnsmsg
 import (
 	"errors"
 	"math"
+	"strings"
 )
 
 var (
@@ -491,6 +492,49 @@ func (m *MsgRawName) unpack() error {
 
 	m.lenNoPtr = 0
 	return errInvalidDNSName
+}
+
+// String returns the human name encoding of m. Dots inside the label
+// (not separating labels) are escaped as '\.', slashes are encoded as '\\',
+// other octets not in range (including) 0x21 through 0xFE are encoded using the \DDD syntax.
+func (m *MsgRawName) String() string {
+	builder := strings.Builder{}
+	builder.Grow(int(m.lenNoPtr))
+
+	i := m.nameStart
+	for {
+		if m.m.msg[i]&0xC0 == 0xC0 {
+			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			continue
+		}
+
+		if m.m.msg[i] == 0 {
+			return builder.String()
+		}
+
+		for _, v := range m.m.msg[i+1 : i+uint16(m.m.msg[i])+1] {
+			switch {
+			case v == '.':
+				builder.WriteString("\\.")
+			case v == '\\':
+				builder.WriteString("\\\\")
+			case v < '!' || v > '~':
+				builder.WriteByte('\\')
+				tmp := v / 100
+				v -= tmp * 100
+				builder.WriteByte(tmp + '0')
+				tmp = v / 10
+				v -= tmp * 10
+				builder.WriteByte(tmp + '0')
+				builder.WriteByte(v + '0')
+			default:
+				builder.WriteByte(v)
+			}
+		}
+
+		builder.WriteByte('.')
+		i += uint16(m.m.msg[i]) + 1
+	}
 }
 
 func (m *MsgRawName) AppendHumanName(a []byte) []byte {
