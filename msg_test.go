@@ -1335,3 +1335,12 @@ func TestString(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkString(b *testing.B) {
+	name := newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name.String()
+	}
+}
