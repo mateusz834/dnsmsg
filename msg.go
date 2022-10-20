@@ -226,6 +226,7 @@ type MsgRawName struct {
 	nameStart uint16
 
 	lenNoPtr uint8
+	rawLen   uint8
 }
 
 const ptrLoopCount = 16
@@ -462,7 +463,7 @@ func (m *MsgRawName) unpack() error {
 			if m.lenNoPtr == 0 {
 				m.lenNoPtr = uint8(i-int(m.nameStart)) + 1
 			}
-
+			m.rawLen = uint8(nameLen)
 			return nil
 		}
 
@@ -562,7 +563,7 @@ func (m *MsgRawName) AppendBytes(buf []byte) []byte {
 
 // RawName returns the internal dns encoding (as defined in RFC 1035) of the m (without compression pointers)
 func (m *MsgRawName) RawName() []byte {
-	return m.AppendRawName(make([]byte, 0, m.lenNoPtr))
+	return m.AppendRawName(make([]byte, 0, m.RawLen()))
 }
 
 // AppendRawName, does the same thing as RawName, but it appends.
@@ -585,4 +586,8 @@ func (m *MsgRawName) AppendRawName(raw []byte) []byte {
 
 func (m *MsgRawName) NoFollowLen() uint8 {
 	return m.lenNoPtr
+}
+
+func (m *MsgRawName) RawLen() uint8 {
+	return m.rawLen
 }

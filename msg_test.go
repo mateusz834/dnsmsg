@@ -589,12 +589,14 @@ var nameUnpackTests = []struct {
 
 	err         error
 	noFollowLen uint8
+	rawLen      uint8
 }{
 	{
 		msg:         []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 64, 64, 64},
 		nameStart:   0,
 		err:         nil,
 		noFollowLen: 8,
+		rawLen:      8,
 	},
 
 	{
@@ -602,6 +604,7 @@ var nameUnpackTests = []struct {
 		nameStart:   2,
 		err:         nil,
 		noFollowLen: 8,
+		rawLen:      8,
 	},
 
 	{
@@ -609,6 +612,7 @@ var nameUnpackTests = []struct {
 		nameStart:   10,
 		err:         nil,
 		noFollowLen: 9,
+		rawLen:      12,
 	},
 
 	{
@@ -631,6 +635,7 @@ var nameUnpackTests = []struct {
 		nameStart:   0,
 		err:         nil,
 		noFollowLen: 255,
+		rawLen:      255,
 	},
 
 	{
@@ -657,6 +662,7 @@ var nameUnpackTests = []struct {
 		nameStart:   0,
 		err:         nil,
 		noFollowLen: 64,
+		rawLen:      255,
 	},
 
 	{
@@ -755,16 +761,19 @@ func TestNameUnpack(t *testing.T) {
 		}
 
 		if err != nil {
-			if m.NoFollowLen() != 0 {
-				t.Errorf("%v NoFollowLen() != 0, but %v", prefix, m.NoFollowLen())
+			if n := m.NoFollowLen(); n != 0 {
+				t.Errorf("%v expected NoFollowLen to be equal to 0, but %v", prefix, n)
 				continue
 			}
 			continue
 		}
 
-		if m.NoFollowLen() != v.noFollowLen {
-			t.Error(prefix, "NoFollowLen() != len(testNameBytes)", m.NoFollowLen(), v.noFollowLen)
-			continue
+		if n := m.NoFollowLen(); n != v.noFollowLen {
+			t.Errorf("%v expected NoFollowLen to be equal to %v, but %v", prefix, v.noFollowLen, n)
+		}
+
+		if r := m.RawLen(); r != v.rawLen {
+			t.Errorf("%v expected RawLen to be equal to %v, but %v", prefix, v.rawLen, r)
 		}
 	}
 }
