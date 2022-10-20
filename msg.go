@@ -423,26 +423,6 @@ func equalASCIICaseInsensitive(a, b byte) bool {
 	return a == b
 }
 
-func (m *MsgRawName) rawName() []byte {
-	raw := make([]byte, 0, m.lenNoPtr)
-
-	i := m.nameStart
-	for {
-		if m.m.msg[i]&0xC0 == 0xC0 {
-			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
-			continue
-		}
-
-		if m.m.msg[i] == 0 {
-			raw = append(raw, 0)
-			return raw
-		}
-
-		raw = append(raw, m.m.msg[i:i+uint16(m.m.msg[i])+1]...)
-		i += uint16(m.m.msg[i]) + 1
-	}
-}
-
 func (m *MsgRawName) unpack() error {
 	nameLen := uint16(0)
 	ptrCount := uint8(0)
@@ -537,8 +517,70 @@ func (m *MsgRawName) String() string {
 	}
 }
 
-func (m *MsgRawName) AppendHumanName(a []byte) []byte {
-	return nil
+// Bytes does the same thing as String(), but it returns []byte
+func (m *MsgRawName) Bytes() []byte {
+	return m.AppendBytes(make([]byte, 0, m.lenNoPtr))
+}
+
+// AppendBytes, does the same thing as Bytes, but it appends.
+func (m *MsgRawName) AppendBytes(buf []byte) []byte {
+	i := m.nameStart
+	for {
+		if m.m.msg[i]&0xC0 == 0xC0 {
+			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			continue
+		}
+
+		if m.m.msg[i] == 0 {
+			return buf
+		}
+
+		for _, v := range m.m.msg[i+1 : i+uint16(m.m.msg[i])+1] {
+			switch {
+			case v == '.':
+				buf = append(buf, "\\."...)
+			case v == '\\':
+				buf = append(buf, "\\\\"...)
+			case v < '!' || v > '~':
+				buf = append(buf, "\\"...)
+				tmp := v / 100
+				v -= tmp * 100
+				buf = append(buf, tmp+'0')
+				tmp = v / 10
+				v -= tmp * 10
+				buf = append(buf, tmp+'0')
+				buf = append(buf, v+'0')
+			default:
+				buf = append(buf, v)
+			}
+		}
+
+		buf = append(buf, '.')
+		i += uint16(m.m.msg[i]) + 1
+	}
+}
+
+// RawName returns the internal dns encoding (as defined in RFC 1035) of the m (without compression pointers)
+func (m *MsgRawName) RawName() []byte {
+	return m.AppendRawName(make([]byte, 0, m.lenNoPtr))
+}
+
+// AppendRawName, does the same thing as RawName, but it appends.
+func (m *MsgRawName) AppendRawName(raw []byte) []byte {
+	i := m.nameStart
+	for {
+		if m.m.msg[i]&0xC0 == 0xC0 {
+			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			continue
+		}
+
+		if m.m.msg[i] == 0 {
+			return append(raw, 0)
+		}
+
+		raw = append(raw, m.m.msg[i:i+uint16(m.m.msg[i])+1]...)
+		i += uint16(m.m.msg[i]) + 1
+	}
 }
 
 func (m *MsgRawName) NoFollowLen() uint8 {

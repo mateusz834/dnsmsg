@@ -1336,11 +1336,61 @@ func TestString(t *testing.T) {
 	}
 }
 
+func TestBytes(t *testing.T) {
+	for i, v := range stringTests {
+		prefix := fmt.Sprintf("%v: %v: ", i, v.out)
+
+		if b := v.name.Bytes(); !bytes.Equal(b, []byte(v.out)) {
+			t.Errorf("%v (Bytes) expected %v, but got %v", prefix, []byte(v.out), b)
+		}
+
+		if b := v.name.AppendBytes(nil); !bytes.Equal(b, []byte(v.out)) {
+			t.Errorf("%v (AppendBytes) expected %v, but got %v", prefix, []byte(v.out), b)
+		}
+	}
+}
+
 func BenchmarkString(b *testing.B) {
 	name := newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		name.String()
+	}
+}
+
+var rawNameTests = []struct {
+	name    MsgRawName
+	rawName []byte
+}{
+	{
+		name:    newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		rawName: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+	},
+
+	{
+		name:    newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		rawName: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+	},
+	{
+		name:    newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		rawName: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+	},
+}
+
+func TestRawName(t *testing.T) {
+	for i, v := range rawNameTests {
+		prefix := fmt.Sprintf("%v: %v: ", i, v.rawName)
+
+		raw := v.name.RawName()
+		rawAppend := v.name.AppendRawName(nil)
+
+		if !bytes.Equal(v.rawName, raw) {
+			t.Errorf("%v (RawName) expected %v, but got %v", prefix, v.rawName, raw)
+		}
+
+		if !bytes.Equal(v.rawName, rawAppend) {
+			t.Errorf("%v (AppendRawName) expected %v, but got %v", prefix, v.rawName, rawAppend)
+		}
 	}
 }
