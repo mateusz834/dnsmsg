@@ -480,7 +480,7 @@ func (m *MsgRawName) unpack() error {
 // other octets not in range (including) 0x21 through 0xFE are encoded using the \DDD syntax.
 func (m *MsgRawName) String() string {
 	builder := strings.Builder{}
-	builder.Grow(int(m.lenNoPtr))
+	builder.Grow(int(m.RawLen() - 1))
 
 	i := m.nameStart
 	for {
@@ -520,7 +520,7 @@ func (m *MsgRawName) String() string {
 
 // Bytes does the same thing as String(), but it returns []byte
 func (m *MsgRawName) Bytes() []byte {
-	return m.AppendBytes(make([]byte, 0, m.lenNoPtr))
+	return m.AppendBytes(make([]byte, 0, m.RawLen()-1))
 }
 
 // AppendBytes, does the same thing as Bytes, but it appends.
