@@ -981,7 +981,7 @@ var nameEqualTests = []struct {
 func TestNameEqual(t *testing.T) {
 	for i, v := range nameEqualTests {
 		for ti, tv := range []string{"normal n[0].Equal(n[1])", "reverse n[1].Equal(n[0])"} {
-			prefix := fmt.Sprintf("%v: %v: %v: ", i, v.name, tv)
+			prefix := fmt.Sprintf("%v: %v: %v:", i, v.name, tv)
 
 			names := v.names
 			if ti == 1 {
@@ -993,6 +993,100 @@ func TestNameEqual(t *testing.T) {
 			}
 		}
 	}
+}
+
+var nameEqualRawTests = []struct {
+	name  MsgRawName
+	name2 []byte
+
+	eq bool
+}{
+	{
+		name:  newMsgRawName([]byte{0}),
+		name2: []byte{0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name2: []byte{3, 'c', 'o', 'm', 0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name2: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawName([]byte{3, 'w', 'w', 'a', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+		eq:    false,
+	},
+	{
+		name:  newMsgRawName([]byte{4, 'w', 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+		eq:    false,
+	},
+	{
+		name:  newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawNameOffset([]byte{2, 'g', 'O', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'W', 'w', 'W', 0xC0, 0}, 10),
+		name2: []byte{3, 'W', 'W', 'w', 2, 'g', 'O', 3, 'D', 'E', 'V', 0},
+		eq:    true,
+	},
+	{
+		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name2: []byte{3, 'c', 'o'},
+		eq:    false,
+	},
+
+	{
+		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name2: []byte{},
+		eq:    false,
+	},
+}
+
+func TestNameEqualRaw(t *testing.T) {
+	for i, v := range nameEqualRawTests {
+		prefix := fmt.Sprintf("%v: %v:", i, v.name2)
+
+		if eq := v.name.EqualRaw(v.name2); eq != v.eq {
+			t.Errorf("%v expected: %v, but: %v", prefix, v.eq, eq)
+		}
+	}
+}
+
+func FuzzNameEqualRaw(f *testing.F) {
+	for _, v := range nameEqualRawTests {
+		f.Add(v.name.m.msg, v.name.nameStart, v.name2)
+	}
+
+	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 []byte) {
+		msg, err := NewMsg(a)
+		if err != nil {
+			return
+		}
+
+		name := MsgRawName{
+			m:         &msg,
+			nameStart: nameStart,
+		}
+
+		err = name.unpack()
+		if err != nil {
+			return
+		}
+
+		name.EqualRaw(name2)
+	})
 }
 
 func BenchmarkEqualSameMsgNoCompression(b *testing.B) {

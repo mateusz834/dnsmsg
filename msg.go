@@ -271,6 +271,42 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 	}
 }
 
+func (m *MsgRawName) EqualRaw(m2 []byte) bool {
+	im1 := m.nameStart
+	im2 := uint16(0)
+
+	for {
+		// Resolve all (in a row) compression pointers of m
+		for m.m.msg[im1]&0xC0 == 0xC0 {
+			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
+		}
+
+		if len(m2) <= int(im2) {
+			return false
+		}
+
+		// different label lengths
+		if m.m.msg[im1] != m2[im2] {
+			return false
+		}
+
+		if m.m.msg[im1] == 0 {
+			return true
+		}
+
+		if uint16(len(m2[im2:])) < uint16(m2[im2])+1 {
+			return false
+		}
+
+		if !equal(m.m.msg[im1+1:im1+1+uint16(m.m.msg[im1])], m2[im2+1:im2+1+uint16(m2[im2])]) {
+			return false
+		}
+
+		im1 += uint16(m.m.msg[im1]) + 1
+		im2 += uint16(m2[im2]) + 1
+	}
+}
+
 //FIX: issues in EqualString/EqualBytes:
 
 //TODO: we are assuming here that the name (m2) is a valid name, but it does not have to be
