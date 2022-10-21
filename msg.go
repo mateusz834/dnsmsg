@@ -233,6 +233,7 @@ const ptrLoopCount = 16
 
 // Equal reports whether m and m2 represents the same name.
 // It does not require identical internal representation of the name.
+// Letters are compared in a case insensitive manner.
 func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 	im1 := m.nameStart
 	im2 := m2.nameStart
@@ -271,6 +272,9 @@ func (m *MsgRawName) Equal(m2 *MsgRawName) bool {
 	}
 }
 
+// EqualRaw reports whether m and m2 represents the same name.
+// m2 must be encoded using the RFC 1035 (section 3.1) name encoding,
+// but without compression pointers. Letters are compared in a case insensitive manner.
 func (m *MsgRawName) EqualRaw(m2 []byte) bool {
 	im1 := m.nameStart
 	im2 := uint16(0)
@@ -314,13 +318,13 @@ func (m *MsgRawName) EqualRaw(m2 []byte) bool {
 
 // Equal reports whether m and a human encoded name m2 represents the same name.
 // m2 must be a valid dns name. Special symbols (in m2) can be encoded using
-// escaping techniques, like: '\.', '\\', '\046'.
+// escaping techniques, like: '\.', '\\', '\046'. Letters are compared in a case insensitive manner.
 func (m *MsgRawName) EqualString(m2 string) bool {
 	return equalHumanEncodedName(m, m2)
 }
 
 // Equal reports whether m and a human encoded name m2 represents the same name.
-// See EqualString for more information.
+// See EqualString for more information. Letters are compared in a case insensitive manner.
 func (m *MsgRawName) EqualBytes(m2 []byte) bool {
 	return equalHumanEncodedName(m, m2)
 }
