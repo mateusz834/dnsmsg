@@ -541,13 +541,7 @@ func (m *MsgRawName) String() string {
 				builder.WriteString("\\\\")
 			case v < '!' || v > '~':
 				builder.WriteByte('\\')
-				tmp := v / 100
-				v -= tmp * 100
-				builder.WriteByte(tmp + '0')
-				tmp = v / 10
-				v -= tmp * 10
-				builder.WriteByte(tmp + '0')
-				builder.WriteByte(v + '0')
+				builder.Write(toASCIIDecimal(v))
 			default:
 				builder.WriteByte(v)
 			}
@@ -556,6 +550,18 @@ func (m *MsgRawName) String() string {
 		builder.WriteByte('.')
 		i += uint16(m.m.msg[i]) + 1
 	}
+}
+
+func toASCIIDecimal(v byte) []byte {
+	var d [3]byte
+	tmp := v / 100
+	v -= tmp * 100
+	d[0] = tmp + '0'
+	tmp = v / 10
+	v -= tmp * 10
+	d[1] = tmp + '0'
+	d[2] = v + '0'
+	return d[:]
 }
 
 // Bytes does the same thing as String(), but it returns []byte
@@ -584,13 +590,7 @@ func (m *MsgRawName) AppendBytes(buf []byte) []byte {
 				buf = append(buf, "\\\\"...)
 			case v < '!' || v > '~':
 				buf = append(buf, "\\"...)
-				tmp := v / 100
-				v -= tmp * 100
-				buf = append(buf, tmp+'0')
-				tmp = v / 10
-				v -= tmp * 10
-				buf = append(buf, tmp+'0')
-				buf = append(buf, v+'0')
+				buf = append(buf, toASCIIDecimal(v)...)
 			default:
 				buf = append(buf, v)
 			}
