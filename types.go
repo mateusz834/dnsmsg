@@ -3,7 +3,14 @@ package dnsmsg
 type Type uint16
 
 const (
-	TypeA Type = 1
+	TypeA     Type = 1
+	TypeNS    Type = 2
+	TypeCNAME Type = 5
+	TypeSOA   Type = 6
+	TypePTR   Type = 12
+	TypeMX    Type = 15
+	TypeTXT   Type = 16
+	TypeAAAA  Type = 28
 )
 
 type Class uint16
@@ -60,11 +67,25 @@ type ResourceA struct {
 	A [4]byte
 }
 
-type ResourceAAAA struct {
-	AAAA [16]byte
+type ResourceNS[T nameConstraint] struct {
+	NS T
 }
 
 type ResourceCNAME[T nameConstraint] struct {
+	CNAME T
+}
+
+type ResourceSOA[T nameConstraint] struct {
+	NS      T
+	Mbox    T
+	Serial  uint32
+	Refresh uint32
+	Retry   uint32
+	Expire  uint32
+	Minimum uint32
+}
+
+type ResourcePTR[T nameConstraint] struct {
 	CNAME T
 }
 
@@ -79,12 +100,6 @@ type ResourceTXT struct {
 	TXT []byte
 }
 
-type ResourceSOA[T nameConstraint] struct {
-	NS      T
-	Mbox    T
-	Setial  uint32
-	Refresh uint32
-	Retry   uint32
-	Expire  uint32
-	Minimum uint32
+type ResourceAAAA struct {
+	AAAA [16]byte
 }
