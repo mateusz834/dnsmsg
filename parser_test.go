@@ -32,7 +32,7 @@ var (
 var hdr Header
 
 func BenchmarkHeader(b *testing.B) {
-	m, _ := NewMsg(testHeaderRaw)
+	m, _ := NewParser(testHeaderRaw)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -42,7 +42,7 @@ func BenchmarkHeader(b *testing.B) {
 }
 
 func TestHeader(t *testing.T) {
-	m, err := NewMsg(testHeaderRaw)
+	m, err := NewParser(testHeaderRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestHeader(t *testing.T) {
 }
 
 func TestHeaderErr(t *testing.T) {
-	m, err := NewMsg(testHeaderRaw[:len(testHeaderRaw)-1])
+	m, err := NewParser(testHeaderRaw[:len(testHeaderRaw)-1])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestResourceHeader(t *testing.T) {
 	for i, v := range resourceHeaderTests {
 		prefix := fmt.Sprintf("%v: %v: ", i, v.msg)
 
-		msg, err := NewMsg(v.msg)
+		msg, err := NewParser(v.msg)
 		if err != nil {
 			t.Errorf("%v unexpected NewMsg error: %v", prefix, err)
 			continue
@@ -250,7 +250,7 @@ func TestQuestion(t *testing.T) {
 	for i, v := range questionTests {
 		prefix := fmt.Sprintf("%v: %v: ", i, v.msg)
 
-		msg, err := NewMsg(v.msg)
+		msg, err := NewParser(v.msg)
 		if err != nil {
 			t.Errorf("%v unexpected NewMsg error: %v", prefix, err)
 			continue
@@ -457,7 +457,7 @@ var resourceTests = []struct {
 }
 
 func newMsgRawName(buf []byte) MsgRawName {
-	msg, err := NewMsg(buf)
+	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
@@ -476,7 +476,7 @@ func newMsgRawName(buf []byte) MsgRawName {
 }
 
 func newMsgRawNameOffset(buf []byte, off uint16) MsgRawName {
-	msg, err := NewMsg(buf)
+	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
@@ -498,7 +498,7 @@ func TestResource(t *testing.T) {
 	for i, v := range resourceTests {
 		prefix := fmt.Sprintf("%v: %T: %v", i, v.res, v.msg)
 
-		msg, err := NewMsg(v.msg)
+		msg, err := NewParser(v.msg)
 		if err != nil {
 			t.Errorf("%v unexpected NewMsg error: %v", prefix, err)
 			continue
@@ -566,7 +566,7 @@ var msgRawName MsgRawName
 
 func BenchmarkNameUnpack(b *testing.B) {
 	benchMsg := []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0, 64, 64, 64}
-	msg, _ := NewMsg(benchMsg)
+	msg, _ := NewParser(benchMsg)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -743,9 +743,9 @@ func TestNameUnpack(t *testing.T) {
 			prefix = fmt.Sprintf("%v: %v: %v: ", i, v.name, v.msg)
 		}
 
-		msg, err := NewMsg(v.msg)
+		msg, err := NewParser(v.msg)
 		if err != nil {
-			t.Errorf("%v unexpected NewMsg() error: %v", prefix, err)
+			t.Errorf("%v unexpected NewParser() error: %v", prefix, err)
 			continue
 		}
 
@@ -779,7 +779,7 @@ func TestNameUnpack(t *testing.T) {
 }
 
 func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]MsgRawName {
-	msg, err := NewMsg(buf)
+	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
@@ -803,12 +803,12 @@ func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]MsgRawName {
 }
 
 func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]MsgRawName {
-	msg1, err := NewMsg(buf1)
+	msg1, err := NewParser(buf1)
 	if err != nil {
 		panic(err)
 	}
 
-	msg2, err := NewMsg(buf2)
+	msg2, err := NewParser(buf2)
 	if err != nil {
 		panic(err)
 	}
@@ -1070,7 +1070,7 @@ func FuzzNameEqualRaw(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 []byte) {
-		msg, err := NewMsg(a)
+		msg, err := NewParser(a)
 		if err != nil {
 			return
 		}
@@ -1347,7 +1347,7 @@ func FuzzEqualString(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 string) {
-		msg, err := NewMsg(a)
+		msg, err := NewParser(a)
 		if err != nil {
 			return
 		}
@@ -1376,7 +1376,7 @@ func FuzzEqualBytes(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, a []byte, nameStart uint16, name2 []byte) {
-		msg, err := NewMsg(a)
+		msg, err := NewParser(a)
 		if err != nil {
 			return
 		}
