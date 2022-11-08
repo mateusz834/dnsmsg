@@ -39,7 +39,7 @@ func (h *Header) unpack(msg []byte) (uint16, error) {
 }
 
 type nameConstraint interface {
-	MsgRawName | BuilderName
+	ParserName | BuilderName
 }
 
 type Question[T nameConstraint] struct {

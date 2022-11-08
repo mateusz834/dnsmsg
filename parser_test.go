@@ -84,7 +84,7 @@ func TestHeaderErr(t *testing.T) {
 
 var resourceHeaderTests = []struct {
 	msg []byte
-	hdr ResourceHeader[MsgRawName]
+	hdr ResourceHeader[ParserName]
 
 	err    error
 	offset uint16
@@ -98,8 +98,8 @@ var resourceHeaderTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, 1025)
 			return raw
 		}(),
-		hdr: ResourceHeader[MsgRawName]{
-			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		hdr: ResourceHeader[ParserName]{
+			Name:   newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:   TypeA,
 			Class:  ClassIN,
 			TTL:    11111111,
@@ -118,8 +118,8 @@ var resourceHeaderTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		hdr: ResourceHeader[MsgRawName]{
-			Name:   newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		hdr: ResourceHeader[ParserName]{
+			Name:   newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:   TypeA,
 			Class:  ClassIN,
 			TTL:    11111111,
@@ -189,7 +189,7 @@ func TestResourceHeader(t *testing.T) {
 
 var questionTests = []struct {
 	msg []byte
-	q   Question[MsgRawName]
+	q   Question[ParserName]
 
 	err    error
 	offset uint16
@@ -201,8 +201,8 @@ var questionTests = []struct {
 			raw = binary.BigEndian.AppendUint16(raw, uint16(ClassIN))
 			return raw
 		}(),
-		q: Question[MsgRawName]{
-			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		q: Question[ParserName]{
+			Name:  newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:  TypeA,
 			Class: ClassIN,
 		},
@@ -217,8 +217,8 @@ var questionTests = []struct {
 			raw = append(raw, []byte{3, 'd', 'e', 'v', 0}...)
 			return raw
 		}(),
-		q: Question[MsgRawName]{
-			Name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		q: Question[ParserName]{
+			Name:  newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 			Type:  TypeA,
 			Class: ClassIN,
 		},
@@ -341,31 +341,31 @@ var resourceTests = []struct {
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 8,
-		res:    ResourceCNAME[MsgRawName]{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
+		res:    ResourceCNAME[ParserName]{CNAME: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
 		offset: 8,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 0xC0, 6, 32, 3, 'd', 'e', 'v', 0},
 		length: 5,
-		res:    ResourceCNAME[MsgRawName]{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
+		res:    ResourceCNAME[ParserName]{CNAME: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
 		offset: 5,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3},
 		length: 4,
-		res:    ResourceCNAME[MsgRawName]{},
+		res:    ResourceCNAME[ParserName]{},
 		err:    errInvalidDNSName,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 7,
-		res:    ResourceCNAME[MsgRawName]{},
+		res:    ResourceCNAME[ParserName]{},
 		err:    errInvalidDNSMessage,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 9,
-		res:    ResourceCNAME[MsgRawName]{},
+		res:    ResourceCNAME[ParserName]{},
 		err:    errInvalidDNSMessage,
 	},
 
@@ -374,7 +374,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 10,
-		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[ParserName]{MX: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		offset: 10,
 	},
 	{
@@ -382,7 +382,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 31111), []byte{2, 'g', 'o', 0xC0, 9, 32, 32, 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 7,
-		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 31111},
+		res:    ResourceMX[ParserName]{MX: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 31111},
 		offset: 7,
 	},
 	{
@@ -390,7 +390,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 9,
-		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[ParserName]{MX: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -398,7 +398,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 11,
-		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[ParserName]{MX: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -406,7 +406,7 @@ var resourceTests = []struct {
 			return []byte{1}
 		}(),
 		length: 4,
-		res:    ResourceMX[MsgRawName]{},
+		res:    ResourceMX[ParserName]{},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -414,7 +414,7 @@ var resourceTests = []struct {
 			return binary.BigEndian.AppendUint16(nil, 10)
 		}(),
 		length: 3,
-		res:    ResourceMX[MsgRawName]{},
+		res:    ResourceMX[ParserName]{},
 		err:    errInvalidDNSName,
 	},
 
@@ -456,13 +456,13 @@ var resourceTests = []struct {
 	},
 }
 
-func newMsgRawName(buf []byte) MsgRawName {
+func newParserName(buf []byte) ParserName {
 	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
 
-	name := MsgRawName{
+	name := ParserName{
 		m:         &msg,
 		nameStart: 0,
 	}
@@ -475,13 +475,13 @@ func newMsgRawName(buf []byte) MsgRawName {
 	return name
 }
 
-func newMsgRawNameOffset(buf []byte, off uint16) MsgRawName {
+func newParserNameOffset(buf []byte, off uint16) ParserName {
 	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
 
-	name := MsgRawName{
+	name := ParserName{
 		m:         &msg,
 		nameStart: off,
 	}
@@ -514,9 +514,9 @@ func TestResource(t *testing.T) {
 			out, err = msg.ResourceA(v.length)
 		case ResourceAAAA:
 			out, err = msg.ResourceAAAA(v.length)
-		case ResourceCNAME[MsgRawName]:
+		case ResourceCNAME[ParserName]:
 			out, err = msg.ResourceCNAME(v.length)
-		case ResourceMX[MsgRawName]:
+		case ResourceMX[ParserName]:
 			out, err = msg.ResourceMX(v.length)
 		case ResourceTXT:
 			out, err = msg.ResourceTXT(v.length)
@@ -539,11 +539,11 @@ func TestResource(t *testing.T) {
 		switch expect := v.res.(type) {
 		case ResourceA, ResourceAAAA:
 			eq = v.res == out
-		case ResourceCNAME[MsgRawName]:
-			res := out.(ResourceCNAME[MsgRawName])
+		case ResourceCNAME[ParserName]:
+			res := out.(ResourceCNAME[ParserName])
 			eq = expect.CNAME.Equal(&res.CNAME)
-		case ResourceMX[MsgRawName]:
-			res := out.(ResourceMX[MsgRawName])
+		case ResourceMX[ParserName]:
+			res := out.(ResourceMX[ParserName])
 			eq = expect.MX.Equal(&res.MX) && expect.Pref == res.Pref
 		case ResourceTXT:
 			res := out.(ResourceTXT)
@@ -562,7 +562,7 @@ func TestResource(t *testing.T) {
 	}
 }
 
-var msgRawName MsgRawName
+var msgRawName ParserName
 
 func BenchmarkNameUnpack(b *testing.B) {
 	benchMsg := []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0, 64, 64, 64}
@@ -570,7 +570,7 @@ func BenchmarkNameUnpack(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m := MsgRawName{
+		m := ParserName{
 			m:         &msg,
 			nameStart: 0,
 		}
@@ -749,7 +749,7 @@ func TestNameUnpack(t *testing.T) {
 			continue
 		}
 
-		m := MsgRawName{
+		m := ParserName{
 			m:         &msg,
 			nameStart: v.nameStart,
 		}
@@ -778,31 +778,31 @@ func TestNameUnpack(t *testing.T) {
 	}
 }
 
-func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]MsgRawName {
+func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]ParserName {
 	msg, err := NewParser(buf)
 	if err != nil {
 		panic(err)
 	}
 
-	m1 := MsgRawName{m: &msg, nameStart: n1Start}
+	m1 := ParserName{m: &msg, nameStart: n1Start}
 	err = m1.unpack()
 	if err != nil {
 		panic(err)
 	}
 
-	m2 := MsgRawName{m: &msg, nameStart: n2Start}
+	m2 := ParserName{m: &msg, nameStart: n2Start}
 	err = m2.unpack()
 	if err != nil {
 		panic(err)
 	}
 
-	var n [2]MsgRawName
+	var n [2]ParserName
 	n[0] = m1
 	n[1] = m2
 	return n
 }
 
-func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]MsgRawName {
+func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]ParserName {
 	msg1, err := NewParser(buf1)
 	if err != nil {
 		panic(err)
@@ -813,19 +813,19 @@ func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]MsgRawN
 		panic(err)
 	}
 
-	m1 := MsgRawName{m: &msg1, nameStart: n1Start}
+	m1 := ParserName{m: &msg1, nameStart: n1Start}
 	err = m1.unpack()
 	if err != nil {
 		panic(err)
 	}
 
-	m2 := MsgRawName{m: &msg2, nameStart: n2Start}
+	m2 := ParserName{m: &msg2, nameStart: n2Start}
 	err = m2.unpack()
 	if err != nil {
 		panic(err)
 	}
 
-	var n [2]MsgRawName
+	var n [2]ParserName
 	n[0] = m1
 	n[1] = m2
 	return n
@@ -834,7 +834,7 @@ func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]MsgRawN
 var nameEqualTests = []struct {
 	name string
 
-	names [2]MsgRawName
+	names [2]ParserName
 	equal bool
 }{
 	{
@@ -996,59 +996,59 @@ func TestNameEqual(t *testing.T) {
 }
 
 var nameEqualRawTests = []struct {
-	name  MsgRawName
+	name  ParserName
 	name2 []byte
 
 	eq bool
 }{
 	{
-		name:  newMsgRawName([]byte{0}),
+		name:  newParserName([]byte{0}),
 		name2: []byte{0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name:  newParserName([]byte{3, 'c', 'o', 'm', 0}),
 		name2: []byte{3, 'c', 'o', 'm', 0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:  newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name2: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:  newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawName([]byte{3, 'w', 'w', 'a', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:  newParserName([]byte{3, 'w', 'w', 'a', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		eq:    false,
 	},
 	{
-		name:  newMsgRawName([]byte{4, 'w', 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:  newParserName([]byte{4, 'w', 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		eq:    false,
 	},
 	{
-		name:  newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		name:  newParserNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
 		name2: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawNameOffset([]byte{2, 'g', 'O', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'W', 'w', 'W', 0xC0, 0}, 10),
+		name:  newParserNameOffset([]byte{2, 'g', 'O', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'W', 'w', 'W', 0xC0, 0}, 10),
 		name2: []byte{3, 'W', 'W', 'w', 2, 'g', 'O', 3, 'D', 'E', 'V', 0},
 		eq:    true,
 	},
 	{
-		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name:  newParserName([]byte{3, 'c', 'o', 'm', 0}),
 		name2: []byte{3, 'c', 'o'},
 		eq:    false,
 	},
 
 	{
-		name:  newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		name:  newParserName([]byte{3, 'c', 'o', 'm', 0}),
 		name2: []byte{},
 		eq:    false,
 	},
@@ -1075,7 +1075,7 @@ func FuzzNameEqualRaw(f *testing.F) {
 			return
 		}
 
-		name := MsgRawName{
+		name := ParserName{
 			m:         &msg,
 			nameStart: nameStart,
 		}
@@ -1126,160 +1126,160 @@ func BenchmarkEqualSameMsgDirectCompressionPointer(b *testing.B) {
 }
 
 var nameEqualStringTests = []struct {
-	msgRawName  MsgRawName
+	msgRawName  ParserName
 	name        string
 	noAppendDot bool
 
 	eq bool
 }{
 	{
-		msgRawName:  newMsgRawName([]byte{0}),
+		msgRawName:  newParserName([]byte{0}),
 		name:        ".",
 		noAppendDot: true,
 		eq:          true,
 	},
 
 	{
-		msgRawName:  newMsgRawName([]byte{0xC0, 3, 32, 0}),
+		msgRawName:  newParserName([]byte{0xC0, 3, 32, 0}),
 		name:        ".",
 		noAppendDot: true,
 		eq:          true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'c', 'o', 'm', 0}),
+		msgRawName: newParserName([]byte{3, 'c', 'o', 'm', 0}),
 		name:       "com",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "go.dev",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0}),
+		msgRawName: newParserName([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0}),
 		name:       "gO.DEv",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "www.go.dev",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "imap.go.dev",
 		eq:         false,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "sth.go.dev",
 		eq:         false,
 	},
 
 	{
-		msgRawName: newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		msgRawName: newParserNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
 		name:       "www.go.dev",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		msgRawName: newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
 		name:       "wwW.go.dEv",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		msgRawName: newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
 		name:       "wwR.go.dEv",
 		eq:         false,
 	},
 
 	{
-		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		msgRawName: newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
 		name:       "wwww.go.dEv",
 		eq:         false,
 	},
 
 	{
-		msgRawName: newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
+		msgRawName: newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10),
 		name:       "www.golang.org",
 		eq:         false,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{1, '\\', 0}),
+		msgRawName: newParserName([]byte{1, '\\', 0}),
 		name:       "\\",
 		eq:         false,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{1, '\\', 0}),
+		msgRawName: newParserName([]byte{1, '\\', 0}),
 		name:       "\\\\",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', '.', 'w', 0}),
+		msgRawName: newParserName([]byte{3, 'w', '.', 'w', 0}),
 		name:       "w.w",
 		eq:         false,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{3, '.', '.', '.', 0}),
+		msgRawName: newParserName([]byte{3, '.', '.', '.', 0}),
 		name:       "...",
 		eq:         false,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{3, '.', '.', '.', 0}),
+		msgRawName: newParserName([]byte{3, '.', '.', '.', 0}),
 		name:       "\\.\\.\\.",
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "w\\.w.go.dev",
 		eq:         true,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "w\\\\w.go.dev",
 		eq:         true,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "w\\ww.g\\o.\\dev",
 		eq:         true,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		msgRawName: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		name:       "w\\087w.\\103o.d\\101v", // wWw.go.dev
 		eq:         true,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{1, 0, 0}),
+		msgRawName: newParserName([]byte{1, 0, 0}),
 		name:       "\\256",
 		eq:         false,
 	},
 
 	{
-		msgRawName:  newMsgRawName([]byte{0}),
+		msgRawName:  newParserName([]byte{0}),
 		name:        "\\.",
 		noAppendDot: true,
 		eq:          false,
 	},
 
 	{
-		msgRawName: newMsgRawName([]byte{1, 7, 0}),
+		msgRawName: newParserName([]byte{1, 7, 0}),
 		name:       "\\07",
 		eq:         false,
 	},
 	{
-		msgRawName: newMsgRawName([]byte{1, 0, 0}),
+		msgRawName: newParserName([]byte{1, 0, 0}),
 		name:       "\\0",
 		eq:         false,
 	},
@@ -1320,7 +1320,7 @@ func TestNameEqualBytes(t *testing.T) {
 }
 
 func BenchmarkEqualString(b *testing.B) {
-	name := newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
+	name := newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1329,7 +1329,7 @@ func BenchmarkEqualString(b *testing.B) {
 }
 
 func BenchmarkEqualBytes(b *testing.B) {
-	name := newMsgRawNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
+	name := newParserNameOffset([]byte{2, 'G', 'o', 3, 'd', 'E', 'v', 0, 32, 32, 3, 'w', 'W', 'w', 0xC0, 0}, 10)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1352,7 +1352,7 @@ func FuzzEqualString(f *testing.F) {
 			return
 		}
 
-		name := MsgRawName{
+		name := ParserName{
 			m:         &msg,
 			nameStart: nameStart,
 		}
@@ -1381,7 +1381,7 @@ func FuzzEqualBytes(f *testing.F) {
 			return
 		}
 
-		name := MsgRawName{
+		name := ParserName{
 			m:         &msg,
 			nameStart: nameStart,
 		}
@@ -1396,35 +1396,35 @@ func FuzzEqualBytes(f *testing.F) {
 }
 
 var stringTests = []struct {
-	name MsgRawName
+	name ParserName
 	out  string
 }{
 	{
-		name: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name: newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		out:  "go.dev.",
 	},
 
 	{
-		name: newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name: newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		out:  "www.go.dev.",
 	},
 
 	{
-		name: newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		name: newParserNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
 		out:  "www.go.dev.",
 	},
 
 	{
-		name: newMsgRawName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name: newParserName([]byte{3, 'w', '.', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		out:  "w\\.w.go.dev.",
 	},
 	{
-		name: newMsgRawName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name: newParserName([]byte{3, 'w', '\\', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		out:  "w\\\\w.go.dev.",
 	},
 
 	{
-		name: newMsgRawName([]byte{4, 3, 'w', 32, 'w', 4, 'w', 127, 'w', 255, 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name: newParserName([]byte{4, 3, 'w', 32, 'w', 4, 'w', 127, 'w', 255, 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		out:  "\\003w\\032w.w\\127w\\255.go.dev.",
 	},
 }
@@ -1454,7 +1454,7 @@ func TestBytes(t *testing.T) {
 }
 
 func BenchmarkString(b *testing.B) {
-	name := newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10)
+	name := newParserNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1463,20 +1463,20 @@ func BenchmarkString(b *testing.B) {
 }
 
 var rawNameTests = []struct {
-	name    MsgRawName
+	name    ParserName
 	rawName []byte
 }{
 	{
-		name:    newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:    newParserName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		rawName: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 	},
 
 	{
-		name:    newMsgRawName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
+		name:    newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
 		rawName: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 	},
 	{
-		name:    newMsgRawNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
+		name:    newParserNameOffset([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0, 32, 32, 3, 'w', 'w', 'w', 0xC0, 0}, 10),
 		rawName: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 	},
 }
