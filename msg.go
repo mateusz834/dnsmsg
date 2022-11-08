@@ -120,6 +120,20 @@ func (m *Msg) Skip(length uint16) error {
 	return nil
 }
 
+func (m *Msg) MsgRawName() (MsgRawName, error) {
+	name := MsgRawName{
+		m:         m,
+		nameStart: m.curOffset,
+	}
+
+	if err := name.unpack(); err != nil {
+		return MsgRawName{}, err
+	}
+
+	m.curOffset += uint16(name.NoFollowLen())
+	return name, nil
+}
+
 func (m *Msg) RawResource(length uint16) ([]byte, error) {
 	if len(m.msg[m.curOffset:]) < int(length) {
 		return nil, errInvalidDNSMessage
@@ -153,8 +167,8 @@ func (m *Msg) ResourceAAAA(length uint16) (ResourceAAAA, error) {
 	}, nil
 }
 
-func (m *Msg) ResourceCNAME(RDLength uint16) (ResourceCNAME, error) {
-	r := ResourceCNAME{
+func (m *Msg) ResourceCNAME(RDLength uint16) (ResourceCNAME[MsgRawName], error) {
+	r := ResourceCNAME[MsgRawName]{
 		CNAME: MsgRawName{
 			m:         m,
 			nameStart: m.curOffset,
@@ -163,19 +177,19 @@ func (m *Msg) ResourceCNAME(RDLength uint16) (ResourceCNAME, error) {
 
 	err := r.CNAME.unpack()
 	if err != nil {
-		return ResourceCNAME{}, err
+		return ResourceCNAME[MsgRawName]{}, err
 	}
 
 	if uint16(r.CNAME.NoFollowLen()) != RDLength {
-		return ResourceCNAME{}, errInvalidDNSMessage
+		return ResourceCNAME[MsgRawName]{}, errInvalidDNSMessage
 	}
 
 	m.curOffset += uint16(r.CNAME.NoFollowLen())
 	return r, nil
 }
 
-func (m *Msg) ResourceMX(RDLength uint16) (ResourceMX, error) {
-	r := ResourceMX{
+func (m *Msg) ResourceMX(RDLength uint16) (ResourceMX[MsgRawName], error) {
+	r := ResourceMX[MsgRawName]{
 		MX: MsgRawName{
 			m:         m,
 			nameStart: m.curOffset + 2,
@@ -183,18 +197,18 @@ func (m *Msg) ResourceMX(RDLength uint16) (ResourceMX, error) {
 	}
 
 	if len(m.msg[m.curOffset:]) < 2 {
-		return ResourceMX{}, errInvalidDNSMessage
+		return ResourceMX[MsgRawName]{}, errInvalidDNSMessage
 	}
 
 	r.Pref = unpackUint16(m.msg[m.curOffset : m.curOffset+2])
 
 	err := r.MX.unpack()
 	if err != nil {
-		return ResourceMX{}, err
+		return ResourceMX[MsgRawName]{}, err
 	}
 
 	if uint16(r.MX.NoFollowLen()) != RDLength-2 {
-		return ResourceMX{}, errInvalidDNSMessage
+		return ResourceMX[MsgRawName]{}, errInvalidDNSMessage
 	}
 
 	m.curOffset += uint16(r.MX.NoFollowLen()) + 2

@@ -341,31 +341,31 @@ var resourceTests = []struct {
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 8,
-		res:    ResourceCNAME{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
+		res:    ResourceCNAME[MsgRawName]{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
 		offset: 8,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 0xC0, 6, 32, 3, 'd', 'e', 'v', 0},
 		length: 5,
-		res:    ResourceCNAME{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
+		res:    ResourceCNAME[MsgRawName]{CNAME: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})},
 		offset: 5,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3},
 		length: 4,
-		res:    ResourceCNAME{},
+		res:    ResourceCNAME[MsgRawName]{},
 		err:    errInvalidDNSName,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 7,
-		res:    ResourceCNAME{},
+		res:    ResourceCNAME[MsgRawName]{},
 		err:    errInvalidDNSMessage,
 	},
 	{
 		msg:    []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0},
 		length: 9,
-		res:    ResourceCNAME{},
+		res:    ResourceCNAME[MsgRawName]{},
 		err:    errInvalidDNSMessage,
 	},
 
@@ -374,7 +374,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 10,
-		res:    ResourceMX{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		offset: 10,
 	},
 	{
@@ -382,7 +382,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 31111), []byte{2, 'g', 'o', 0xC0, 9, 32, 32, 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 7,
-		res:    ResourceMX{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 31111},
+		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 31111},
 		offset: 7,
 	},
 	{
@@ -390,7 +390,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 9,
-		res:    ResourceMX{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -398,7 +398,7 @@ var resourceTests = []struct {
 			return append(binary.BigEndian.AppendUint16(nil, 10), []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
 		}(),
 		length: 11,
-		res:    ResourceMX{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
+		res:    ResourceMX[MsgRawName]{MX: newMsgRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}), Pref: 10},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -406,7 +406,7 @@ var resourceTests = []struct {
 			return []byte{1}
 		}(),
 		length: 4,
-		res:    ResourceMX{},
+		res:    ResourceMX[MsgRawName]{},
 		err:    errInvalidDNSMessage,
 	},
 	{
@@ -414,7 +414,7 @@ var resourceTests = []struct {
 			return binary.BigEndian.AppendUint16(nil, 10)
 		}(),
 		length: 3,
-		res:    ResourceMX{},
+		res:    ResourceMX[MsgRawName]{},
 		err:    errInvalidDNSName,
 	},
 
@@ -514,9 +514,9 @@ func TestResource(t *testing.T) {
 			out, err = msg.ResourceA(v.length)
 		case ResourceAAAA:
 			out, err = msg.ResourceAAAA(v.length)
-		case ResourceCNAME:
+		case ResourceCNAME[MsgRawName]:
 			out, err = msg.ResourceCNAME(v.length)
-		case ResourceMX:
+		case ResourceMX[MsgRawName]:
 			out, err = msg.ResourceMX(v.length)
 		case ResourceTXT:
 			out, err = msg.ResourceTXT(v.length)
@@ -539,11 +539,11 @@ func TestResource(t *testing.T) {
 		switch expect := v.res.(type) {
 		case ResourceA, ResourceAAAA:
 			eq = v.res == out
-		case ResourceCNAME:
-			res := out.(ResourceCNAME)
+		case ResourceCNAME[MsgRawName]:
+			res := out.(ResourceCNAME[MsgRawName])
 			eq = expect.CNAME.Equal(&res.CNAME)
-		case ResourceMX:
-			res := out.(ResourceMX)
+		case ResourceMX[MsgRawName]:
+			res := out.(ResourceMX[MsgRawName])
 			eq = expect.MX.Equal(&res.MX) && expect.Pref == res.Pref
 		case ResourceTXT:
 			res := out.(ResourceTXT)

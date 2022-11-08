@@ -38,9 +38,8 @@ func (h *Header) unpack(msg []byte) (uint16, error) {
 	return headerLen, nil
 }
 
-type RawName []byte
 type nameConstraint interface {
-	[]byte | string | RawName | MsgRawName
+	MsgRawName | BuilderName
 }
 
 type Question[T nameConstraint] struct {
@@ -65,12 +64,12 @@ type ResourceAAAA struct {
 	AAAA [16]byte
 }
 
-type ResourceCNAME struct {
-	CNAME MsgRawName
+type ResourceCNAME[T nameConstraint] struct {
+	CNAME T
 }
 
-type ResourceMX struct {
-	MX   MsgRawName
+type ResourceMX[T nameConstraint] struct {
+	MX   T
 	Pref uint16
 }
 
@@ -78,4 +77,14 @@ type ResourceTXT struct {
 	// TXT is as defined by RFC 1035 a "One or more <character-string>s"
 	// so it is a one or more byte-length prefixed data
 	TXT []byte
+}
+
+type ResourceSOA[T nameConstraint] struct {
+	NS      T
+	Mbox    T
+	Setial  uint32
+	Refresh uint32
+	Retry   uint32
+	Expire  uint32
+	Minimum uint32
 }
