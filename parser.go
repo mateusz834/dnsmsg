@@ -23,41 +23,41 @@ func unpackUint32(b []byte) uint32 {
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
 
-func NewMsg(msg []byte) (Msg, error) {
+func NewMsg(msg []byte) (Parser, error) {
 	if len(msg) > math.MaxUint16 {
-		return Msg{}, errDNSMsgTooLong
+		return Parser{}, errDNSMsgTooLong
 	}
 
-	return Msg{
+	return Parser{
 		msg: msg,
 	}, nil
 }
 
-type Msg struct {
+type Parser struct {
 	msg       []byte
 	curOffset uint16
 }
 
-func (m *Msg) Len() int {
+func (m *Parser) Len() int {
 	return len(m.msg)
 }
 
-func (m *Msg) SetOffset(off uint16) {
+func (m *Parser) SetOffset(off uint16) {
 	m.curOffset = off
 }
 
-func (m *Msg) GetOffset() uint16 {
+func (m *Parser) GetOffset() uint16 {
 	return m.curOffset
 }
 
-func (m *Msg) Header() (Header, error) {
+func (m *Parser) Header() (Header, error) {
 	var hdr Header
 	offset, err := hdr.unpack(m.msg[m.curOffset:])
 	m.curOffset += offset
 	return hdr, err
 }
 
-func (m *Msg) Question() (Question[MsgRawName], error) {
+func (m *Parser) Question() (Question[MsgRawName], error) {
 	q := Question[MsgRawName]{
 		Name: MsgRawName{
 			m:         m,
@@ -83,7 +83,7 @@ func (m *Msg) Question() (Question[MsgRawName], error) {
 	return q, nil
 }
 
-func (m *Msg) ResourceHeader() (ResourceHeader[MsgRawName], error) {
+func (m *Parser) ResourceHeader() (ResourceHeader[MsgRawName], error) {
 	q := ResourceHeader[MsgRawName]{
 		Name: MsgRawName{
 			m:         m,
@@ -111,7 +111,7 @@ func (m *Msg) ResourceHeader() (ResourceHeader[MsgRawName], error) {
 	return q, nil
 }
 
-func (m *Msg) Skip(length uint16) error {
+func (m *Parser) Skip(length uint16) error {
 	if len(m.msg[m.curOffset:]) < int(length) {
 		return errInvalidDNSMessage
 	}
@@ -120,7 +120,7 @@ func (m *Msg) Skip(length uint16) error {
 	return nil
 }
 
-func (m *Msg) MsgRawName() (MsgRawName, error) {
+func (m *Parser) MsgRawName() (MsgRawName, error) {
 	name := MsgRawName{
 		m:         m,
 		nameStart: m.curOffset,
@@ -134,7 +134,7 @@ func (m *Msg) MsgRawName() (MsgRawName, error) {
 	return name, nil
 }
 
-func (m *Msg) RawResource(length uint16) ([]byte, error) {
+func (m *Parser) RawResource(length uint16) ([]byte, error) {
 	if len(m.msg[m.curOffset:]) < int(length) {
 		return nil, errInvalidDNSMessage
 	}
@@ -145,7 +145,7 @@ func (m *Msg) RawResource(length uint16) ([]byte, error) {
 	return msg, nil
 }
 
-func (m *Msg) ResourceA(length uint16) (ResourceA, error) {
+func (m *Parser) ResourceA(length uint16) (ResourceA, error) {
 	if len(m.msg[m.curOffset:]) < 4 || length != 4 {
 		return ResourceA{}, errInvalidDNSMessage
 	}
@@ -156,7 +156,7 @@ func (m *Msg) ResourceA(length uint16) (ResourceA, error) {
 	}, nil
 }
 
-func (m *Msg) ResourceAAAA(length uint16) (ResourceAAAA, error) {
+func (m *Parser) ResourceAAAA(length uint16) (ResourceAAAA, error) {
 	if len(m.msg[m.curOffset:]) < 16 || length != 16 {
 		return ResourceAAAA{}, errInvalidDNSMessage
 	}
@@ -167,7 +167,7 @@ func (m *Msg) ResourceAAAA(length uint16) (ResourceAAAA, error) {
 	}, nil
 }
 
-func (m *Msg) ResourceCNAME(RDLength uint16) (ResourceCNAME[MsgRawName], error) {
+func (m *Parser) ResourceCNAME(RDLength uint16) (ResourceCNAME[MsgRawName], error) {
 	r := ResourceCNAME[MsgRawName]{
 		CNAME: MsgRawName{
 			m:         m,
@@ -188,7 +188,7 @@ func (m *Msg) ResourceCNAME(RDLength uint16) (ResourceCNAME[MsgRawName], error) 
 	return r, nil
 }
 
-func (m *Msg) ResourceMX(RDLength uint16) (ResourceMX[MsgRawName], error) {
+func (m *Parser) ResourceMX(RDLength uint16) (ResourceMX[MsgRawName], error) {
 	r := ResourceMX[MsgRawName]{
 		MX: MsgRawName{
 			m:         m,
@@ -215,7 +215,7 @@ func (m *Msg) ResourceMX(RDLength uint16) (ResourceMX[MsgRawName], error) {
 	return r, nil
 }
 
-func (m *Msg) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
+func (m *Parser) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
 	if len(m.msg[m.curOffset:]) < int(RDLength) {
 		return ResourceTXT{}, errInvalidDNSMessage
 	}
@@ -236,7 +236,7 @@ func (m *Msg) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
 }
 
 type MsgRawName struct {
-	m         *Msg
+	m         *Parser
 	nameStart uint16
 
 	lenNoPtr uint8
