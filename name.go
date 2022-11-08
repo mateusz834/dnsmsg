@@ -43,8 +43,8 @@ const (
 )
 
 type BuilderName struct {
-	// We use unsafe.Pointer, because while using interfaces we cause
-	// a lot of heap alloactions, which we want to avoid in this package.
+	// We are using unsafe.Pointer, because while using interfaces we cause
+	// a lot of heap allocations, which we want to avoid in this package.
 	ptr     unsafe.Pointer
 	ptrType ptrType
 	cmprPtr uint16
