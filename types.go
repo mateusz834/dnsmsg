@@ -86,7 +86,7 @@ type ResourceSOA[T nameConstraint] struct {
 }
 
 type ResourcePTR[T nameConstraint] struct {
-	CNAME T
+	PTR T
 }
 
 type ResourceMX[T nameConstraint] struct {
