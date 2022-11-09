@@ -19,6 +19,79 @@ const (
 	ClassIN Class = 1
 )
 
+type Bit uint8
+
+const (
+	BitAA Bit = 10
+	BitTC Bit = 9
+	BitRD Bit = 8
+	BitRA Bit = 7
+	BitAD Bit = 5
+	BitCD Bit = 4
+)
+
+type OpCode uint8
+
+const (
+	OpCodeQuery OpCode = 0
+)
+
+type RCode uint8
+
+const (
+	RCodeSuccess RCode = 0
+)
+
+type Flags uint16
+
+const bitQR = 1 << 15
+
+func (f Flags) Query() bool {
+	return f&bitQR == 0
+}
+
+func (f Flags) Response() bool {
+	return f&bitQR != 0
+}
+
+func (f Flags) Bit(bit Bit) bool {
+	return f&(1<<bit) != 0
+}
+
+func (f Flags) OpCode() OpCode {
+	return OpCode((f >> 11) & 0b1111)
+}
+
+func (f Flags) RCode() RCode {
+	return RCode(f & 0b1111)
+}
+
+func (f *Flags) SetQuery() {
+	*f &= ^Flags(bitQR) // zero the QR bit
+}
+
+func (f *Flags) SetResponse() {
+	*f |= bitQR
+}
+
+func (f *Flags) SetBit(bit Bit, val bool) {
+	*f &= ^Flags(1 << bit) // zero bit
+	if !val {
+		return
+	}
+	*f |= (1 << bit)
+}
+
+func (f *Flags) SetOpCode(o OpCode) {
+	*f &= ^Flags(0b1111 << 11) // zero the opcode bits
+	*f |= Flags(o) << 11
+}
+
+func (f *Flags) SetRCode(r RCode) {
+	*f &= ^Flags(0b1111) // zero the rcode bits
+	*f |= Flags(r)
+}
+
 type Header struct {
 	ID      uint16
 	Flags   Flags
