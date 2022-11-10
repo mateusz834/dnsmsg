@@ -86,7 +86,11 @@ func NewPtrName(ptr uint16) BuilderName {
 	}
 }
 
+const maxNameLen = 255
+
 func appendHumanName[T []byte | string](buf []byte, m T) ([]byte, error) {
+	startLen := len(buf)
+
 	buf = append(buf, 0)
 	length := &buf[len(buf)-1]
 
@@ -111,8 +115,7 @@ loop:
 			i++
 			char = m[i]
 
-			switch {
-			case char >= '0' && char <= '9':
+			if char >= '0' && char <= '9' {
 				if len(m) == i+1 || len(m) == i+2 {
 					return nil, errInvalidDNSName
 				}
@@ -127,17 +130,19 @@ loop:
 				if tmp > math.MaxUint8 {
 					return nil, errInvalidDNSName
 				}
-				buf = append(buf, uint8(tmp))
-			default:
-				buf = append(buf, char)
+				char = uint8(tmp)
 			}
-		default:
-			buf = append(buf, char)
 		}
-
+		buf = append(buf, char)
 		*length++
+		if *length > 63 {
+			return nil, errInvalidDNSName
+		}
 	}
 
 	buf = append(buf, 0)
+	if len(buf)-startLen > maxNameLen {
+		return nil, errInvalidDNSName
+	}
 	return buf, nil
 }

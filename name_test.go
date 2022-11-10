@@ -2,6 +2,7 @@ package dnsmsg
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -17,7 +18,13 @@ func TestBuilderNameZeroValuePanic(t *testing.T) {
 	b.Name(BuilderName{})
 }
 
-// TODO: 253B non-rooted, 254B rooted domain + errrors
+var (
+	longDNSPrefix = strings.Repeat("verylongdomainlabel.", 20)
+)
+
+func longName(length int, suffix string) string {
+	return longDNSPrefix[:length-len(suffix)] + suffix
+}
 
 var builderNameStringTests = []struct {
 	name string
@@ -45,6 +52,19 @@ var builderNameStringTests = []struct {
 	{name: "go.dev\\01", err: errInvalidDNSName},
 
 	{name: "s\\T12h.go.dev.", expect: []byte{5, 's', 'T', '1', '2', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+
+	{name: longName(253, ".go.dev")},
+	{name: longName(254, ".go.dev"), err: errInvalidDNSName},
+	{name: longName(254, ".go.dev.")},
+	{name: longName(255, ".go.dev."), err: errInvalidDNSName},
+
+	{name: strings.Repeat("a", 63) + ".go.dev.", expect: func() []byte {
+		name := bytes.Repeat([]byte{'a'}, 63)
+		name = append([]byte{63}, name...)
+		return append(name, []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
+	}()},
+
+	{name: strings.Repeat("a", 64) + ".go.dev.", err: errInvalidDNSName},
 }
 
 func TestBuilderNameString(t *testing.T) {
@@ -53,6 +73,10 @@ func TestBuilderNameString(t *testing.T) {
 		err := b.Name(NewStringName(v.name))
 		if err != v.err {
 			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
+			continue
+		}
+
+		if v.err != nil || v.expect == nil {
 			continue
 		}
 
