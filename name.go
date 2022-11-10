@@ -5,30 +5,32 @@ import (
 	"unsafe"
 )
 
-func (b *Builder) Name(n BuilderName) {
+func (b *Builder) Name(n BuilderName) error {
 	switch n.ptrType {
 	case ptrTypeRaw:
 		b.buf = append(b.buf, *(*[]byte)(n.ptr)...)
+		return nil
 	default:
 		// splitted to allow Name() to be inlined, so that NewRawName()
 		// will be tha fastest one.
-		b.nameRest(n)
+		return b.nameRest(n)
 	}
 }
 
-func (b *Builder) nameRest(n BuilderName) {
+func (b *Builder) nameRest(n BuilderName) (err error) {
 	switch n.ptrType {
 	case ptrTypeRoot:
 		b.buf = append(b.buf, 0)
 	case ptrTypePtr:
 		b.buf = appendUint16(b.buf, n.cmprPtr)
 	case ptrTypeString:
-		b.buf = appendHumanNameA(b.buf, *(*string)(n.ptr))
+		b.buf, err = appendHumanName(b.buf, *(*string)(n.ptr))
 	case ptrTypeBytes:
-		b.buf = appendHumanNameA(b.buf, *(*[]byte)(n.ptr))
+		b.buf, err = appendHumanName(b.buf, *(*[]byte)(n.ptr))
 	default:
-		panic("cannot use zero value of BuilderNameInter")
+		panic("cannot use zero value of BuilderName")
 	}
+	return err
 }
 
 type ptrType uint8
@@ -84,7 +86,7 @@ func NewPtrName(ptr uint16) BuilderName {
 	}
 }
 
-func appendHumanNameA[T []byte | string](buf []byte, m T) []byte {
+func appendHumanName[T []byte | string](buf []byte, m T) ([]byte, error) {
 	buf = append(buf, 0)
 	length := &buf[len(buf)-1]
 
@@ -104,22 +106,26 @@ loop:
 			continue
 		case '\\':
 			if len(m) == i+1 {
-				return nil //TODO: error
+				return nil, errInvalidDNSName
 			}
 			i++
 			char = m[i]
 
 			switch {
-			case char >= '0' && char <= '0':
-				if len(m) == i-1 || len(m) == i { //TODO: tu jest cos zle i tak :) +1 chyba tam i +2??
-					return nil
+			case char >= '0' && char <= '9':
+				if len(m) == i+1 || len(m) == i+2 {
+					return nil, errInvalidDNSName
+				}
+
+				if !(m[i+1] >= '0' && m[i+1] <= '9' && m[i+2] >= '0' && m[i+2] <= '9') {
+					return nil, errInvalidDNSName
 				}
 
 				tmp := (uint16(char)-'0')*100 + (uint16(m[i+1])-'0')*10 + (uint16(m[i+2]) - '0')
 				i += 2
 
 				if tmp > math.MaxUint8 {
-					return nil //TODO: error handle ??
+					return nil, errInvalidDNSName
 				}
 				buf = append(buf, uint8(tmp))
 			default:
@@ -133,5 +139,5 @@ loop:
 	}
 
 	buf = append(buf, 0)
-	return buf
+	return buf, nil
 }

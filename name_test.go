@@ -1,6 +1,9 @@
 package dnsmsg
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestBuilderNameZeroValuePanic(t *testing.T) {
 	defer func() {
@@ -12,6 +15,94 @@ func TestBuilderNameZeroValuePanic(t *testing.T) {
 
 	b := NewBuilder(nil)
 	b.Name(BuilderName{})
+}
+
+// TODO: 253B non-rooted, 254B rooted domain + errrors
+
+var builderNameStringTests = []struct {
+	name string
+
+	expect []byte
+	err    error
+}{
+	{name: "go.dev", expect: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "go.dev.", expect: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "www.go.dev", expect: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "www.go.dev.", expect: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+
+	{name: "s\\.th.go.dev.", expect: []byte{4, 's', '.', 't', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "s\\\\th.go.dev.", expect: []byte{4, 's', '\\', 't', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "s\\th.go.dev.", expect: []byte{3, 's', 't', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+
+	{name: "sth.go.dev\\", err: errInvalidDNSName},
+
+	{name: "s\\000th.go.dev.", expect: []byte{4, 's', 0, 't', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "s\\128\\255h.go.dev.", expect: []byte{4, 's', 128, 255, 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+	{name: "go.dev\\010", expect: []byte{2, 'g', 'o', 4, 'd', 'e', 'v', 10, 0}},
+	{name: "s\\256th.go.dev.", err: errInvalidDNSName},
+	{name: "s\\0A0th.go.dev.", err: errInvalidDNSName},
+	{name: "s\\00Ath.go.dev.", err: errInvalidDNSName},
+	{name: "go.dev\\01", err: errInvalidDNSName},
+
+	{name: "s\\T12h.go.dev.", expect: []byte{5, 's', 'T', '1', '2', 'h', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
+}
+
+func TestBuilderNameString(t *testing.T) {
+	for i, v := range builderNameStringTests {
+		b := NewBuilder(make([]byte, 0, 256))
+		err := b.Name(NewStringName(v.name))
+		if err != v.err {
+			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
+			continue
+		}
+
+		got := b.Finish()
+		if !bytes.Equal(v.expect, got) {
+			t.Errorf("%v: %#v:\n\texpected: %v\n\t     got: %v", i, v.name, v.expect, got)
+		}
+	}
+}
+
+func FuzzBuilderName(f *testing.F) {
+	f.Fuzz(func(t *testing.T, name []byte, o uint8, ptr uint16) {
+		defer func() {
+			r := recover()
+			if o == 0 {
+				if !(r == "cannot use zero value of BuilderName" && o == 0) {
+					panic(r)
+				}
+				return
+			}
+
+			if r != nil {
+				panic(r)
+			}
+		}()
+
+		t.Logf("%#v %v %v", string(name), o, ptr)
+
+		var bn BuilderName
+
+		switch o {
+		case 0:
+			bn = BuilderName{}
+		case 1:
+			bn = NewPtrName(ptr)
+		case 2:
+			bn = NewRootName()
+		case 3:
+			bn = NewRawName(name)
+		case 4:
+			bn = NewStringName(string(name))
+		case 5:
+			bn = NewBytesName(name)
+		default:
+			return
+		}
+
+		b := NewBuilder(make([]byte, 0, 256))
+		b.Name(bn)
+	})
 }
 
 const builderBenchString = "imap.internal.go.dev"
