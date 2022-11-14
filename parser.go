@@ -13,16 +13,6 @@ var (
 	errDNSMsgTooLong     = errors.New("too long dns message, max supported length: 65535 Bytes")
 )
 
-//TODO: use binary.BigEndian in entire package (because of lower cost (golang/go#42958)) (but probably after golang/go#54097 gets fixed)
-
-func unpackUint16(b []byte) uint16 {
-	return uint16(b[0])<<8 | uint16(b[1])
-}
-
-func unpackUint32(b []byte) uint32 {
-	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
-}
-
 func NewParser(msg []byte) (Parser, error) {
 	if len(msg) > math.MaxUint16 {
 		return Parser{}, errDNSMsgTooLong
@@ -120,7 +110,7 @@ func (m *Parser) Skip(length uint16) error {
 	return nil
 }
 
-func (m *Parser) MsgRawName() (ParserName, error) {
+func (m *Parser) Name() (ParserName, error) {
 	name := ParserName{
 		m:         m,
 		nameStart: m.curOffset,
@@ -312,10 +302,12 @@ func (m *ParserName) EqualRaw(m2 []byte) bool {
 			return true
 		}
 
+		// TODO: co to robi ??? XD, jak dowiem się do comment to XD
 		if uint16(len(m2[im2:])) < uint16(m2[im2])+1 {
 			return false
 		}
 
+		// TODO: i to jakoś czytelniej chyba cnie?
 		if !equal(m.m.msg[im1+1:im1+1+uint16(m.m.msg[im1])], m2[im2+1:im2+1+uint16(m2[im2])]) {
 			return false
 		}

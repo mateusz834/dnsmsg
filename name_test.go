@@ -15,7 +15,7 @@ func TestBuilderNameZeroValuePanic(t *testing.T) {
 	}()
 
 	b := NewBuilder(nil)
-	b.Name(BuilderName{})
+	b.Name(&BuilderName{})
 }
 
 var (
@@ -70,7 +70,8 @@ var builderNameStringTests = []struct {
 func TestBuilderNameString(t *testing.T) {
 	for i, v := range builderNameStringTests {
 		b := NewBuilder(make([]byte, 0, 256))
-		err := b.Name(NewStringName(v.name))
+		n := NewStringName(v.name)
+		err := b.Name(&n)
 		if err != v.err {
 			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
 			continue
@@ -125,7 +126,7 @@ func FuzzBuilderName(f *testing.F) {
 		}
 
 		b := NewBuilder(make([]byte, 0, 256))
-		b.Name(bn)
+		b.Name(&bn)
 	})
 }
 
@@ -133,6 +134,7 @@ const builderBenchString = "imap.internal.go.dev"
 
 var builderBenchRawName = [...]byte{4, 'i', 'm', 'a', 'p', 8, 'i', 'n', 't', 'e', 'r', 'n', 'a', 'l', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
 
+/*
 func BenchmarkBuilderRawName(b *testing.B) {
 	buf := make([]byte, 0, 256)
 	b.ResetTimer()
@@ -205,3 +207,4 @@ func BenchmarkBuilderPtr(b *testing.B) {
 		buf = b.Finish()
 	}
 }
+*/
