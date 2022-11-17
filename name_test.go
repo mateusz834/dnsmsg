@@ -88,6 +88,27 @@ func TestBuilderNameString(t *testing.T) {
 	}
 }
 
+func TestBuilderNameBytes(t *testing.T) {
+	for i, v := range builderNameStringTests {
+		b := NewBuilder(make([]byte, 0, 256))
+		n := NewBytesName([]byte(v.name))
+		err := b.Name(&n)
+		if err != v.err {
+			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
+			continue
+		}
+
+		if v.err != nil || v.expect == nil {
+			continue
+		}
+
+		got := b.Finish()
+		if !bytes.Equal(v.expect, got) {
+			t.Errorf("%v: %#v:\n\texpected: %v\n\t     got: %v", i, v.name, v.expect, got)
+		}
+	}
+}
+
 func FuzzBuilderName(f *testing.F) {
 	f.Fuzz(func(t *testing.T, name []byte, o uint8, ptr uint16) {
 		defer func() {
@@ -133,6 +154,18 @@ func FuzzBuilderName(f *testing.F) {
 const builderBenchString = "imap.internal.go.dev"
 
 var builderBenchRawName = [...]byte{4, 'i', 'm', 'a', 'p', 8, 'i', 'n', 't', 'e', 'r', 'n', 'a', 'l', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
+
+func BenchmarkBuilderRawName(b *testing.B) {
+	buf := make([]byte, 0, 256)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name := builderBenchRawName
+		b := NewBuilder(buf[:0:256])
+		r := NewRawName(name[:])
+		b.Name(&r)
+		buf = b.Finish()
+	}
+}
 
 /*
 func BenchmarkBuilderRawName(b *testing.B) {

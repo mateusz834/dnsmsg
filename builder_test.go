@@ -1,8 +1,7 @@
 package dnsmsg
 
-import "testing"
+/*
 
-func TestBuilderAutoCompress(t *testing.T) {
 	b := NewBuilder(make([]byte, 0, 512))
 
 	acm := CompressionNameBuilder{m: map[string]uint16{}}
@@ -165,6 +164,7 @@ func BenchmarkBuilderHardAResources(b *testing.B) {
 		buf = b.Finish()
 	}
 }
+*/
 
 /*
 func BenchmarkRawDomain(b *testing.B) {

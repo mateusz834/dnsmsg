@@ -11,6 +11,7 @@ const (
 	TypeMX    Type = 15
 	TypeTXT   Type = 16
 	TypeAAAA  Type = 28
+	TypeOPT   Type = 41
 )
 
 type Class uint16
@@ -118,8 +119,18 @@ func (h *Header) unpack(msg []byte) (uint16, error) {
 	return headerLen, nil
 }
 
+func (h *Header) pack(msg []byte) []byte {
+	msg = appendUint16(msg, h.ID)
+	msg = appendUint16(msg, uint16(h.Flags))
+	msg = appendUint16(msg, h.QDCount)
+	msg = appendUint16(msg, h.ANCount)
+	msg = appendUint16(msg, h.NSCount)
+	msg = appendUint16(msg, h.ARCount)
+	return msg
+}
+
 type nameConstraint interface {
-	ParserName | BuilderName
+	ParserName | BuilderName | *CmprBuilderName
 }
 
 type Question[T nameConstraint] struct {
