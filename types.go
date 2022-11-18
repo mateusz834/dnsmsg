@@ -130,7 +130,7 @@ func (h *Header) pack(msg []byte) []byte {
 }
 
 type nameConstraint interface {
-	ParserName | BuilderName | *CmprBuilderName
+	ParserName | *BuilderName
 }
 
 type Question[T nameConstraint] struct {

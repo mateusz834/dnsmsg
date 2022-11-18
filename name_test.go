@@ -32,6 +32,9 @@ var builderNameStringTests = []struct {
 	expect []byte
 	err    error
 }{
+	{name: "", err: errInvalidDNSName},
+	{name: ".", expect: []byte{0}},
+
 	{name: "go.dev", expect: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
 	{name: "go.dev.", expect: []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
 	{name: "www.go.dev", expect: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}},
@@ -70,8 +73,7 @@ var builderNameStringTests = []struct {
 func TestBuilderNameString(t *testing.T) {
 	for i, v := range builderNameStringTests {
 		b := NewBuilder(make([]byte, 0, 256))
-		n := NewStringName(v.name)
-		err := b.Name(&n)
+		err := b.Name(NewStringName(v.name))
 		if err != v.err {
 			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
 			continue
@@ -91,8 +93,7 @@ func TestBuilderNameString(t *testing.T) {
 func TestBuilderNameBytes(t *testing.T) {
 	for i, v := range builderNameStringTests {
 		b := NewBuilder(make([]byte, 0, 256))
-		n := NewBytesName([]byte(v.name))
-		err := b.Name(&n)
+		err := b.Name(NewBytesName([]byte(v.name)))
 		if err != v.err {
 			t.Errorf("%v: %#v: expected error: %v, got: %v", i, v.name, v.err, err)
 			continue
@@ -109,135 +110,43 @@ func TestBuilderNameBytes(t *testing.T) {
 	}
 }
 
-func FuzzBuilderName(f *testing.F) {
-	f.Fuzz(func(t *testing.T, name []byte, o uint8, ptr uint16) {
-		defer func() {
-			r := recover()
-			if o == 0 {
-				if !(r == "cannot use zero value of BuilderName" && o == 0) {
-					panic(r)
-				}
-				return
-			}
-
-			if r != nil {
-				panic(r)
-			}
-		}()
-
-		t.Logf("%#v %v %v", string(name), o, ptr)
-
-		var bn BuilderName
-
-		switch o {
-		case 0:
-			bn = BuilderName{}
-		case 1:
-			bn = NewPtrName(ptr)
-		case 2:
-			bn = NewRootName()
-		case 3:
-			bn = NewRawName(name)
-		case 4:
-			bn = NewStringName(string(name))
-		case 5:
-			bn = NewBytesName(name)
-		default:
-			return
+func TestBuilderNameReuse(t *testing.T) {
+	b := NewBuilder(make([]byte, 2, 256))
+	name := NewStringName("go.dev")
+	for i := 0; i < 3; i++ {
+		if err := b.Name(name); err != nil {
+			t.Fatal(err)
 		}
+	}
 
-		b := NewBuilder(make([]byte, 0, 256))
-		b.Name(&bn)
-	})
-}
+	expect := []byte{0, 0, 2, 'g', 'o', 3, 'd', 'e', 'v', 0, 0xC0, 2, 0xC0, 2}
+	got := b.Finish()
 
-const builderBenchString = "imap.internal.go.dev"
-
-var builderBenchRawName = [...]byte{4, 'i', 'm', 'a', 'p', 8, 'i', 'n', 't', 'e', 'r', 'n', 'a', 'l', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
-
-func BenchmarkBuilderRawName(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		name := builderBenchRawName
-		b := NewBuilder(buf[:0:256])
-		r := NewRawName(name[:])
-		b.Name(&r)
-		buf = b.Finish()
+	if !bytes.Equal(expect, got) {
+		t.Fatalf("expected %v, got %v", expect, got)
 	}
 }
 
-/*
-func BenchmarkBuilderRawName(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		name := builderBenchRawName
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewRawName(name[:]))
-		buf = b.Finish()
+func TestBuilderNameCompression(t *testing.T) {
+	b := NewBuilder(make([]byte, 2, 256))
+	name := NewStringName("go.dev.")
+	for i := 0; i < 2; i++ {
+		if err := b.Name(name); err != nil {
+			t.Fatal(err)
+		}
 	}
-}
 
-func BenchmarkBuilderString(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		name := builderBenchString
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewStringName(name))
-		buf = b.Finish()
+	name = NewStringName("www.go.dev.")
+	for i := 0; i < 2; i++ {
+		if err := b.Name(name); err != nil {
+			t.Fatal(err)
+		}
 	}
-}
 
-func BenchmarkBuilderBytes(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		name := []byte(builderBenchString)
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewBytesName(name))
-		buf = b.Finish()
-	}
-}
+	expect := []byte{0, 0, 2, 'g', 'o', 3, 'd', 'e', 'v', 0, 0xC0, 2, 3, 'w', 'w', 'w', 0xC0, 2, 0xC0, 12}
+	got := b.Finish()
 
-func BenchmarkBuilderRawNameRoot(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewRawName([]byte{0}))
-		buf = b.Finish()
+	if !bytes.Equal(expect, got) {
+		t.Fatalf("expected:\n %v got:\n %v", expect, got)
 	}
 }
-
-func BenchmarkBuilderRoot(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewRootName())
-		buf = b.Finish()
-	}
-}
-
-func BenchmarkBuilderRawNamePtr(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewRawName([]byte{0xC0, 128}))
-		buf = b.Finish()
-	}
-}
-
-func BenchmarkBuilderPtr(b *testing.B) {
-	buf := make([]byte, 0, 256)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[:0:256])
-		b.Name(NewPtrName(128))
-		buf = b.Finish()
-	}
-}
-*/

@@ -1,199 +1,119 @@
 package dnsmsg
 
-/*
+import "testing"
 
-	b := NewBuilder(make([]byte, 0, 512))
+const builderBenchString = "imap.internal.go.dev"
 
-	acm := CompressionNameBuilder{m: map[string]uint16{}}
-	b.ResourceHeader(&ResourceHeader[BuilderName]{
-		Name:  acm.NewStringName("go.dev."),
-		Type:  TypeSOA,
-		Class: ClassIN,
-		TTL:   100,
-	})
+var builderBenchRawName = [...]byte{4, 'i', 'm', 'a', 'p', 8, 'i', 'n', 't', 'e', 'r', 'n', 'a', 'l', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
 
-	b.ResourceThreeNames(&ResourceThreeNames{
-		A: acm.NewStringName("ns1.go.dev."),
-		B: acm.NewStringName("admin.ns1.go.dev."),
-		C: acm.NewStringName("adam.ns1.go.dev."),
-	})
-	msg := b.Finish()
-	t.Log(msg)
+func TestCmpr(t *testing.T) {
+	b := NewBuilder([]byte{1, 2, 3})
 
-	p, _ := NewParser(msg)
-	hdr, err := p.ResourceHeader()
-	t.Log(hdr.Name.String(), err)
+	r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+	b.Name(r)
 
-	name, err := p.Name()
-	t.Log(name.String(), err, name.lenNoPtr, name.rawLen)
-	name, err = p.Name()
-	t.Log(name.String(), err, name.lenNoPtr, name.rawLen)
-	name, err = p.Name()
-	t.Log(name.String(), err, name.lenNoPtr, name.rawLen)
+	r = NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+	b.Name(r)
+
+	t.Log(b.buf)
 }
 
-func TestBuilder(t *testing.T) {
-	b := NewBuilder(make([]byte, 0, 512))
+func BenchmarkCmprMakeQueryString(b *testing.B) {
+	buf := make([]byte, 0, 256)
 
-	res := ResourceHeader[BuilderName]{
-		Name:  NewStringName("go.dev"),
-		Type:  TypeSOA,
-		Class: ClassIN,
-		TTL:   100,
-	}
-	b.ResourceHeader(&res)
-
-	off := res.Name.MsgOffset()
-
-	threeRes := ResourceThreeNames{}
-	threeRes.A = NewRawNameWithPtr([]byte{3, 'n', 's', '1'}, off)
-	threeRes.B = NewRawNamePtrTo([]byte{5, 'a', 'd', 'm', 'i', 'n'}, &threeRes.A, 0)
-	threeRes.C = NewRawNamePtrTo([]byte{4, 'a', 'd', 'a', 'm'}, &threeRes.A, 0)
-
-	b.ResourceThreeNames(&threeRes)
-	msg := b.Finish()
-
-	p, _ := NewParser(msg)
-	hdr, err := p.ResourceHeader()
-	t.Log(hdr.Name.String(), err)
-
-	name, err := p.Name()
-	t.Log(name.String(), err)
-	name, err = p.Name()
-	t.Log(name.String(), err)
-	name, err = p.Name()
-	t.Log(name.String(), err)
-}
-
-func BenchmarkBuilderCompressionHardManual(b *testing.B) {
-	gBuf := make([]byte, 0, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buf := append(gBuf[:0:128], []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}...)
-		buf = appendUint16(buf, uint16(TypeSOA))
-		buf = appendUint16(buf, uint16(ClassIN))
-		buf = appendUint32(buf, 100)
-		buf = appendUint16(buf, 0)
-
-		l := len(buf)
-		buf = append(buf, []byte{3, 'n', 's', '1'}...)
-		buf = appendUint16(buf, 0|0xC000)
-
-		buf = append(buf, []byte{5, 'a', 'd', 'm', 'i', 'n'}...)
-		buf = appendUint16(buf, 0xC000|uint16(l))
-
-		buf = append(buf, []byte{4, 'a', 'd', 'a', 'm'}...)
-		buf = appendUint16(buf, 0xC000|uint16(l))
-
-		gBuf = buf
+		buf, _ = MakeQuery(buf[:0:256], 11, 11, Question[*BuilderName]{
+			Name:  NewStringName(builderBenchString),
+			Type:  TypeA,
+			Class: ClassIN,
+		})
 	}
 }
 
-func BenchmarkBuilderCompressionHard(b *testing.B) {
+func BenchmarkCmpr10SameNames(b *testing.B) {
+	buf := make([]byte, 0, 256)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b := NewBuilder(buf[:0:256])
+		r := NewRawName(builderBenchRawName[:])
+
+		for j := 0; j < 10; j++ {
+			b.Name(r)
+		}
+		buf = b.Finish()
+	}
+}
+
+func BenchmarkCmpr10DiffrentNames(b *testing.B) {
 	buf := make([]byte, 0, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b := NewBuilder(buf[:0:128])
 
-		res := ResourceHeader[BuilderName]{
-			Name:  NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
-			Type:  TypeSOA,
-			Class: ClassIN,
-			TTL:   100,
-		}
-		b.ResourceHeader(&res)
-		off := res.Name.MsgOffset()
+		r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+		b.Name(r)
 
-		threeRes := ResourceThreeNames{}
-		threeRes.A = NewRawNameWithPtr([]byte{3, 'n', 's', '1'}, off)
-		threeRes.B = NewRawNamePtrTo([]byte{5, 'a', 'd', 'm', 'i', 'n'}, &threeRes.A, 0)
-		threeRes.C = NewRawNamePtrTo([]byte{4, 'a', 'd', 'a', 'm'}, &threeRes.A, 0)
-		b.ResourceThreeNames(&threeRes)
+		for j := 0; j < 9; j++ {
+			r := NewRawName([]byte{1, byte(j), 2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+			b.Name(r)
+		}
 
 		buf = b.Finish()
 	}
 }
 
-func BenchmarkBuilderCompressionHardAutoCompress(b *testing.B) {
+/*
+func BenchmarkCmprManualPtrName10SameNames(b *testing.B) {
 	buf := make([]byte, 0, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b := NewBuilder(buf[:0:128])
-		acm := CompressionNameBuilder{m: map[string]uint16{}}
-		b.ResourceHeader(&ResourceHeader[BuilderName]{
-			Name:  acm.NewStringName("go.dev."),
-			Type:  TypeSOA,
-			Class: ClassIN,
-			TTL:   100,
-		})
 
-		b.ResourceThreeNames(&ResourceThreeNames{
-			A: acm.NewStringName("ns1.go.dev."),
-			B: acm.NewStringName("admin.ns1.go.dev."),
-			C: acm.NewStringName("adam.ns1.go.dev."),
-		})
+		r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+		b.Name(&r)
 
-		buf = b.Finish()
-	}
-}
-
-func BenchmarkBuilderHardAResources(b *testing.B) {
-	buf := make([]byte, 0, 1024*2)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[: 0 : 2*1024])
-
-		res := Question[BuilderName]{
-			Name:  NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}),
-			Type:  TypeSOA,
-			Class: ClassIN,
-		}
-		b.Question(&res)
-
-		for i := uint8(0); i < 4; i++ {
-			b.ResourceHeader(&ResourceHeader[BuilderName]{
-				Name:   NewPtrName(res.Name.MsgOffset()),
-				Type:   TypeA,
-				Class:  ClassIN,
-				TTL:    128,
-				Length: 4,
-			})
-			b.ResourceA(ResourceA{A: [4]byte{1, 1, 1, i}})
+		for j := 0; j < 9; j++ {
+			n := NewPtrName(r.MsgOffset())
+			b.Name(&n)
 		}
 
 		buf = b.Finish()
 	}
 }
-*/
 
-/*
-func BenchmarkRawDomain(b *testing.B) {
-	buf := make([]byte, 0, 1024)
-
+func BenchmarkCmprManualPtrTo10SameNames(b *testing.B) {
+	buf := make([]byte, 0, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		n := []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}
-		strName := "go.dev"
-		bytesStrName := []byte("go.dev")
+		b := NewBuilder(buf[:0:128])
 
-		b := NewBuilder(buf[:0:1024])
-		b.Name(NewRawName(n))
-		b.Name(NewStringName(strName))
-		b.Name(NewBytesName(bytesStrName))
+		r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+		b.Name(&r)
+
+		for j := 0; j < 9; j++ {
+			n := NewRawNamePtrTo(nil, &r, 0)
+			b.Name(&n)
+		}
+
 		buf = b.Finish()
 	}
 }
 
-func BenchmarkRawDomainRR(b *testing.B) {
-	buf := make([]byte, 0, 1024)
-
+func BenchmarkCmprManualPtrTo210SameNames(b *testing.B) {
+	buf := make([]byte, 0, 128)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		n := []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}
-		b := NewBuilder(buf[:0:1024])
-		b.ResHdr(ResourceHeader[BuilderName]{
-			Name: NewRawName(n),
-		})
+		b := NewBuilder(buf[:0:128])
+
+		r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+		b.Name2(&r)
+
+		for j := 0; j < 9; j++ {
+			n := NewRawNameWithPtrTo(nil, &r)
+			b.Name2(&n)
+		}
+
 		buf = b.Finish()
 	}
 }
