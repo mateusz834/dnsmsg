@@ -96,8 +96,8 @@ func (b *Builder) Name(n *BuilderName) error {
 	if !b.oneSameName {
 		b.oneSameName = true
 		n.inMsg = true
-		var err error
 
+		var err error
 		switch name := n.val.(type) {
 		case rawName:
 			b.buf = append(b.buf, name...)
@@ -157,8 +157,9 @@ func appendHumanName[T []byte | string](buf []byte, m T) ([]byte, error) {
 	}
 
 	startLen := len(buf)
+	lengthIndex := len(buf)
+
 	buf = append(buf, 0)
-	length := &buf[len(buf)-1]
 
 loop:
 	for i := 0; i < len(m); i++ {
@@ -171,8 +172,8 @@ loop:
 				break loop
 			}
 
+			lengthIndex = len(buf)
 			buf = append(buf, 0)
-			length = &buf[len(buf)-1]
 			continue
 		case '\\':
 			if len(m) == i+1 {
@@ -200,8 +201,8 @@ loop:
 			}
 		}
 		buf = append(buf, char)
-		*length++
-		if *length > 63 {
+		buf[lengthIndex]++
+		if buf[lengthIndex] > 63 {
 			return nil, errInvalidDNSName
 		}
 	}

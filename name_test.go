@@ -110,9 +110,24 @@ func TestBuilderNameBytes(t *testing.T) {
 	}
 }
 
+func TestBuilderNameRealloc(t *testing.T) {
+	b := NewBuilder(make([]byte, 0, 1))
+	err := b.Name(NewStringName("go.dev."))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expect := []byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0}
+	got := b.Finish()
+	if !bytes.Equal(expect, got) {
+		t.Fatalf("expected %v, got %v", expect, got)
+	}
+}
+
 func TestBuilderNameReuse(t *testing.T) {
 	b := NewBuilder(make([]byte, 2, 256))
 	name := NewStringName("go.dev")
+
 	for i := 0; i < 3; i++ {
 		if err := b.Name(name); err != nil {
 			t.Fatal(err)
