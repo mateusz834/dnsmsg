@@ -2,6 +2,7 @@ package dnsmsg
 
 import (
 	"math"
+	"unsafe"
 )
 
 func appendName(buf []byte, name *BuilderName) ([]byte, error) {
@@ -19,11 +20,12 @@ func appendName(buf []byte, name *BuilderName) ([]byte, error) {
 	}
 }
 
-// BuilderName should be used only within the same builder, reusing them
+// BuilderName should be used ONLY with the same builder, reusing them
 // between different builder might cause a unexpected behaviour.
 type BuilderName struct {
-	val   any
-	inMsg bool
+	val    any
+	inMsg  bool
+	offset uint16
 }
 
 type rawName []byte
@@ -52,7 +54,7 @@ func NewRawName(name []byte) *BuilderName {
 
 // Name appends the name to the message.
 func (b *Builder) Name(n *BuilderName) error {
-	// This implementation is done in such way not to use the b.m map
+	// This implementation is done in such way to not use the b.m map
 	// while building messages with the same name.
 
 	// Don't even try to compress root names.
@@ -68,65 +70,68 @@ func (b *Builder) Name(n *BuilderName) error {
 		}
 
 		// We got different name, allocate hash map and populate it
-		b.m = make(map[string]uint16)
+		b.m = getMap()
 		rawNameStr := string(b.buf[b.firstNameOffset:b.firstNameEnd])
 		for i := 0; i < len(rawNameStr) && rawNameStr[i] != 0; i += int(rawNameStr[i]) + 1 {
 			b.m[rawNameStr[i:]] = b.firstNameOffset + uint16(i)
 		}
-
-		/*
-			switch name := n.val.(type) {
-			case rawName:
-				if equalRaw(b.buf, b.firstNameOffset, name) {
-					b.buf = appendUint16(b.buf, 0xC000|b.firstNameOffset)
-					return nil
-				}
-
-				b.m = make(map[string]uint16)
-				rawNameStr := string(name)
-				for i := 0; i < len(rawNameStr) && rawNameStr[i] != 0; i += int(rawNameStr[i]) + 1 {
-					b.m[rawNameStr[i:]] = b.firstNameOffset + uint16(i)
-				}
-			}
-		*/
 	}
 
+	// TODO: handle possible > 14bits
 	b.firstNameOffset = uint16(len(b.buf))
 
 	if !b.oneSameName {
 		b.oneSameName = true
-		n.inMsg = true
 
-		var err error
 		switch name := n.val.(type) {
 		case rawName:
 			b.buf = append(b.buf, name...)
 		case string:
+			var err error
 			b.buf, err = appendHumanName(b.buf, name)
+			if err != nil {
+				return err
+			}
 		case []byte:
+			var err error
 			b.buf, err = appendHumanName(b.buf, name)
+			if err != nil {
+				return err
+			}
 		}
 
 		b.firstNameEnd = uint16(len(b.buf))
-		return err
+		n.inMsg = true
+		// TODO: handle possible > 14bits
+		n.offset = b.firstNameOffset
+		return nil
 	}
 
-	var raw string
+	if n.inMsg && n.offset != math.MaxUint16 {
+		b.buf = appendUint16(b.buf, 0xC000|n.offset)
+		return nil
+	}
 
+	// TODO: handle possible > 14bits
+	// TODO: it can be set even wthen appendHumanName returns error
+	n.offset = uint16(len(b.buf))
+
+	var raw string
 	switch name := n.val.(type) {
 	case rawName:
 		raw = string(name)
 	case string:
-		r, err := appendHumanName(make([]byte, 0, len(name)), name)
+		r, err := appendHumanName(make([]byte, 0, estinameRawLen(name)), name)
 		if err != nil {
 			return err
 		}
 
-		// TODO: check if this allocates ...
 		// TODO: maybe we can create directly a string using string.Builder??
-		raw = string(r)
+		// TODO: it will not be easy, we can't write to specific index in string.Builder
+		// TOOD: so we will have to do it diffetently than appendHumanName does.
+		raw = *(*string)(unsafe.Pointer(&r))
 	case []byte:
-		r, err := appendHumanName(make([]byte, 0, len(name)), name)
+		r, err := appendHumanName(make([]byte, 0, estinameRawLen(name)), name)
 		if err != nil {
 			return err
 		}
@@ -140,12 +145,14 @@ func (b *Builder) Name(n *BuilderName) error {
 		if ok {
 			b.buf = append(b.buf, raw[:i]...)
 			b.buf = appendUint16(b.buf, 0xC000|ptr)
+			n.inMsg = true
 			return nil
 		}
 		b.m[raw[i:]] = b.firstNameOffset + uint16(i)
 	}
 
 	b.buf = append(b.buf, raw...)
+	n.inMsg = true
 	return nil
 }
 
@@ -212,4 +219,31 @@ loop:
 		return nil, errInvalidDNSName
 	}
 	return buf, nil
+}
+
+// estinameRawLen estimates the length of the name as if it was encoded
+// using the DNS message encoding. It only estimates, we don't take into account
+// possible escapes like `\DDD` and `\.`, because they are rarely used.
+func estinameRawLen[T string | []byte](name T) int {
+	if len(name) == 0 {
+		return 0
+	}
+
+	nameLen := len(name)
+	if name[len(name)-1] == '.' {
+		nameLen--
+	}
+
+	if nameLen == 0 {
+		return 1
+	}
+
+	if nameLen+2 > maxNameLen {
+		return maxNameLen
+	}
+
+	// We add 2 more bytes, insted of 1, because of possible one label names.
+	// For "sth.test" we only need len("sth.test") + 1, but to
+	// encode "test" we need len("test") + 2 bytes,
+	return nameLen + 2
 }

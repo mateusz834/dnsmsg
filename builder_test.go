@@ -46,10 +46,10 @@ func BenchmarkCmpr10SameNames(b *testing.B) {
 }
 
 func BenchmarkCmpr10DiffrentNames(b *testing.B) {
-	buf := make([]byte, 0, 128)
+	buf := make([]byte, 0, 256)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		b := NewBuilder(buf[:0:128])
+		b := NewBuilder(buf[:0:256])
 
 		r := NewRawName([]byte{2, 'g', 'o', 3, 'd', 'e', 'v', 0})
 		b.Name(r)

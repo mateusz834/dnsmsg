@@ -165,3 +165,18 @@ func TestBuilderNameCompression(t *testing.T) {
 		t.Fatalf("expected:\n %v got:\n %v", expect, got)
 	}
 }
+
+func BenchmarkSthh(b *testing.B) {
+	buf := make([]byte, 0, 128)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b := NewBuilder(buf[:0:128])
+		b.Name(NewStringName("test"))
+		invalid := NewStringName("invalid")
+		for i := 0; i < 10; i++ {
+			b.Name(invalid)
+		}
+		buf = b.Finish()
+	}
+}

@@ -1,5 +1,7 @@
 package dnsmsg
 
+import "sync"
+
 func MakeQuery(msg []byte, id uint16, flags Flags, q Question[*BuilderName]) ([]byte, error) {
 	// Header
 	msg = appendUint16(msg, id)
@@ -70,6 +72,28 @@ func NewBuilder(buf []byte) Builder {
 	}
 }
 
-func (b *Builder) Finish() []byte {
-	return b.buf
+func (b *Builder) Finish() (msg []byte) {
+	putMap(b.m)
+	msg = b.buf
+	*b = Builder{}
+	return msg
+}
+
+var maps = sync.Pool{
+	New: func() any {
+		return map[string]uint16{}
+	},
+}
+
+func getMap() map[string]uint16 {
+	return maps.Get().(map[string]uint16)
+}
+
+func putMap(m map[string]uint16) {
+	if m != nil {
+		for i := range m {
+			delete(m, i)
+		}
+		maps.Put(m)
+	}
 }
