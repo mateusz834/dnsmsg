@@ -143,6 +143,7 @@ func TestBuilderNameReuse(t *testing.T) {
 }
 
 func TestBuilderNameCompression(t *testing.T) {
+	//TODO: duplicate this test but create a new name per iteration of the loops.
 	b := NewBuilder(make([]byte, 2, 256))
 	name := NewStringName("go.dev.")
 	for i := 0; i < 2; i++ {

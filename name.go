@@ -65,20 +65,19 @@ func (b *Builder) Name(n *BuilderName) error {
 
 	if b.oneSameName && b.m == nil {
 		if n.inMsg {
-			b.buf = appendUint16(b.buf, 0xC000|b.firstNameOffset)
+			b.buf = appendUint16(b.buf, 0xC000|n.offset)
 			return nil
 		}
 
 		// We got different name, allocate hash map and populate it
 		b.m = getMap()
-		rawNameStr := string(b.buf[b.firstNameOffset:b.firstNameEnd])
+		rawNameStr := string(b.buf[n.offset:b.firstNameEnd])
 		for i := 0; i < len(rawNameStr) && rawNameStr[i] != 0; i += int(rawNameStr[i]) + 1 {
-			b.m[rawNameStr[i:]] = b.firstNameOffset + uint16(i)
+			b.m[rawNameStr[i:]] = n.offset + uint16(i)
 		}
 	}
 
-	// TODO: handle possible > 14bits
-	b.firstNameOffset = uint16(len(b.buf))
+	offset := b.getOffset()
 
 	if !b.oneSameName {
 		b.oneSameName = true
@@ -102,26 +101,21 @@ func (b *Builder) Name(n *BuilderName) error {
 
 		b.firstNameEnd = uint16(len(b.buf))
 		n.inMsg = true
-		// TODO: handle possible > 14bits
-		n.offset = b.firstNameOffset
+		n.offset = offset
 		return nil
 	}
 
-	if n.inMsg && n.offset != math.MaxUint16 {
+	if n.inMsg && n.offset != invalidOffset {
 		b.buf = appendUint16(b.buf, 0xC000|n.offset)
 		return nil
 	}
-
-	// TODO: handle possible > 14bits
-	// TODO: it can be set even wthen appendHumanName returns error
-	n.offset = uint16(len(b.buf))
 
 	var raw string
 	switch name := n.val.(type) {
 	case rawName:
 		raw = string(name)
 	case string:
-		r, err := appendHumanName(make([]byte, 0, estinameRawLen(name)), name)
+		r, err := appendHumanName(make([]byte, 0, estimateRawLen(name)), name)
 		if err != nil {
 			return err
 		}
@@ -131,7 +125,7 @@ func (b *Builder) Name(n *BuilderName) error {
 		// TOOD: so we will have to do it diffetently than appendHumanName does.
 		raw = *(*string)(unsafe.Pointer(&r))
 	case []byte:
-		r, err := appendHumanName(make([]byte, 0, estinameRawLen(name)), name)
+		r, err := appendHumanName(make([]byte, 0, estimateRawLen(name)), name)
 		if err != nil {
 			return err
 		}
@@ -140,20 +134,42 @@ func (b *Builder) Name(n *BuilderName) error {
 		panic("cannot use zero value of BuilderName")
 	}
 
+	// Try to compress the name.
 	for i := 0; i < len(raw) && raw[i] != 0; i += int(raw[i]) + 1 {
 		ptr, ok := b.m[raw[i:]]
 		if ok {
 			b.buf = append(b.buf, raw[:i]...)
 			b.buf = appendUint16(b.buf, 0xC000|ptr)
 			n.inMsg = true
+			n.offset = offset
 			return nil
 		}
-		b.m[raw[i:]] = b.firstNameOffset + uint16(i)
+
+		// Update the map only when the pointer to
+		// this name fits in 14 bits.
+		if int(offset)+i <= maxPtrOffset {
+			b.m[raw[i:]] = offset + uint16(i)
+		}
 	}
 
 	b.buf = append(b.buf, raw...)
 	n.inMsg = true
+	n.offset = offset
 	return nil
+}
+
+const (
+	// 14 bits set to one
+	maxPtrOffset  = math.MaxUint16 & ^(0xC000)
+	invalidOffset = math.MaxUint16
+)
+
+func (b *Builder) getOffset() uint16 {
+	off := len(b.buf)
+	if off > maxPtrOffset {
+		return invalidOffset
+	}
+	return uint16(off)
 }
 
 const maxNameLen = 255
@@ -221,10 +237,10 @@ loop:
 	return buf, nil
 }
 
-// estinameRawLen estimates the length of the name as if it was encoded
+// estimateRawLen estimates the length of the name as if it was encoded
 // using the DNS message encoding. It only estimates, we don't take into account
 // possible escapes like `\DDD` and `\.`, because they are rarely used.
-func estinameRawLen[T string | []byte](name T) int {
+func estimateRawLen[T string | []byte](name T) int {
 	if len(name) == 0 {
 		return 0
 	}
