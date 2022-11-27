@@ -244,6 +244,6 @@ func estinameRawLen[T string | []byte](name T) int {
 
 	// We add 2 more bytes, insted of 1, because of possible one label names.
 	// For "sth.test" we only need len("sth.test") + 1, but to
-	// encode "test" we need len("test") + 2 bytes,
+	// encode "test" we need len("test") + 2 bytes.
 	return nameLen + 2
 }

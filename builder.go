@@ -61,7 +61,9 @@ type Builder struct {
 	m   map[string]uint16
 	buf []byte
 
-	oneSameName     bool
+	oneSameName bool
+
+	// TODO: we probably don't need thid field, we store it in BuilderName now.
 	firstNameOffset uint16
 	firstNameEnd    uint16
 }
@@ -72,6 +74,10 @@ func NewBuilder(buf []byte) Builder {
 	}
 }
 
+// Finish retures the builded message, after calling this
+// method the Builder should be considered invalid, it should
+// not be used anymore. The returned msg slice might share
+// the underlaying array with the slice passed to the NewBuilder().
 func (b *Builder) Finish() (msg []byte) {
 	putMap(b.m)
 	msg = b.buf
