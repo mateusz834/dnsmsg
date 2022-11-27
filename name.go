@@ -52,10 +52,16 @@ func NewRawName(name []byte) *BuilderName {
 	return &BuilderName{val: rawName(name)}
 }
 
+// TODO: when appendHumanName returns and error then it makes the
+// b.buf invalid and other stuff too.
+
 // Name appends the name to the message.
 func (b *Builder) Name(n *BuilderName) error {
 	// This implementation is done in such way to not use the b.m map
 	// while building messages with the same name.
+	if n.val == nil {
+		panic("cannot use zero value of BuilderName")
+	}
 
 	// Don't even try to compress root names.
 	if _, ok := n.val.(rootName); ok {
@@ -65,23 +71,24 @@ func (b *Builder) Name(n *BuilderName) error {
 
 	if b.oneSameName && b.m == nil {
 		if n.inMsg {
+			// TODO: this n.offset can be == to invalidOffset.
 			b.buf = appendUint16(b.buf, 0xC000|n.offset)
 			return nil
 		}
 
 		// We got different name, allocate hash map and populate it
 		b.m = getMap()
-		rawNameStr := string(b.buf[n.offset:b.firstNameEnd])
+		rawNameStr := string(b.buf[b.firstNameOffset:b.firstNameEnd])
 		for i := 0; i < len(rawNameStr) && rawNameStr[i] != 0; i += int(rawNameStr[i]) + 1 {
-			b.m[rawNameStr[i:]] = n.offset + uint16(i)
+			// TODO: handle invalid offset here
+			b.m[rawNameStr[i:]] = b.firstNameOffset + uint16(i)
 		}
 	}
-
-	offset := b.getOffset()
 
 	if !b.oneSameName {
 		b.oneSameName = true
 
+		offset := b.getOffset()
 		switch name := n.val.(type) {
 		case rawName:
 			b.buf = append(b.buf, name...)
@@ -99,9 +106,11 @@ func (b *Builder) Name(n *BuilderName) error {
 			}
 		}
 
+		// TODO: think about that uint16 converison here.
 		b.firstNameEnd = uint16(len(b.buf))
 		n.inMsg = true
 		n.offset = offset
+		b.firstNameOffset = offset
 		return nil
 	}
 
@@ -110,6 +119,7 @@ func (b *Builder) Name(n *BuilderName) error {
 		return nil
 	}
 
+	offset := b.getOffset()
 	var raw string
 	switch name := n.val.(type) {
 	case rawName:
@@ -130,8 +140,6 @@ func (b *Builder) Name(n *BuilderName) error {
 			return err
 		}
 		raw = string(r)
-	default:
-		panic("cannot use zero value of BuilderName")
 	}
 
 	// Try to compress the name.
@@ -145,8 +153,7 @@ func (b *Builder) Name(n *BuilderName) error {
 			return nil
 		}
 
-		// Update the map only when the pointer to
-		// this name fits in 14 bits.
+		// Update the map only when the pointer fits in 14 bits.
 		if int(offset)+i <= maxPtrOffset {
 			b.m[raw[i:]] = offset + uint16(i)
 		}

@@ -61,8 +61,9 @@ type Builder struct {
 	m   map[string]uint16
 	buf []byte
 
-	oneSameName  bool
-	firstNameEnd uint16
+	oneSameName     bool
+	firstNameOffset uint16
+	firstNameEnd    uint16
 }
 
 func NewBuilder(buf []byte) Builder {
