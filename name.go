@@ -16,7 +16,7 @@ func appendName(buf []byte, name *BuilderName) ([]byte, error) {
 	case []byte:
 		return appendHumanName(buf, name)
 	default:
-		panic("aa TODO")
+		panic("cannot use zero value of BuilderName")
 	}
 }
 
