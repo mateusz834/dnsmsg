@@ -49,7 +49,7 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 func appendName[T name](buf []byte, n T) []byte {
 	switch n := any(n).(type) {
 	case Name:
-		return appendEscapedName(buf, n.name)
+		return appendEscapedName(buf, n.n)
 	case ParserName:
 		return n.appendRawName(buf)
 	default:
@@ -60,14 +60,16 @@ func appendName[T name](buf []byte, n T) []byte {
 var errInvalidName = errors.New("invalid name")
 
 type Name struct {
-	name string
+	n string
 }
+
+func (Name) name() {}
 
 func NewName(name string) (Name, error) {
 	if !isValidEscapedName(name) {
 		return Name{}, errInvalidName
 	}
-	return Name{name: name}, nil
+	return Name{n: name}, nil
 }
 
 func isValidEscapedName(m string) bool {

@@ -353,22 +353,22 @@ func (m *ParserName) EqualName(m2 Name) bool {
 		labelLength := m.m.msg[im1]
 
 		if labelLength == 0 {
-			return len(m2.name) == nameOffset || ((len(m2.name)-nameOffset) == 1 && m2.name[nameOffset] == '.')
+			return len(m2.n) == nameOffset || ((len(m2.n)-nameOffset) == 1 && m2.n[nameOffset] == '.')
 		}
 
 		im1++
 		for _, v := range m.m.msg[im1 : im1+uint16(labelLength)] {
-			if len(m2.name)-nameOffset == 0 {
+			if len(m2.n)-nameOffset == 0 {
 				return false
 			}
 
-			char := m2.name[nameOffset]
+			char := m2.n[nameOffset]
 			nameOffset++
 			if char == '\\' {
-				char = m2.name[nameOffset]
+				char = m2.n[nameOffset]
 				nameOffset++
 				if isDigit(char) {
-					char, _ = decodeDDD([3]byte{char, m2.name[nameOffset], m2.name[nameOffset+1]})
+					char, _ = decodeDDD([3]byte{char, m2.n[nameOffset], m2.n[nameOffset+1]})
 					nameOffset += 2
 				}
 			}
@@ -378,8 +378,8 @@ func (m *ParserName) EqualName(m2 Name) bool {
 			}
 		}
 
-		if len(m2.name)-nameOffset != 0 {
-			if m2.name[nameOffset] != '.' {
+		if len(m2.n)-nameOffset != 0 {
+			if m2.n[nameOffset] != '.' {
 				return false
 			}
 			nameOffset++
