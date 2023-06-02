@@ -33,6 +33,18 @@ type Parser struct {
 	curOffset uint16
 }
 
+func (p *Parser) Bytes() []byte {
+	return p.msg
+}
+
+func (p *Parser) Offset() uint16 {
+	return p.curOffset
+}
+
+func (p *Parser) SetOffset(off uint16) {
+	p.curOffset = off
+}
+
 func (m *Parser) availMsgData() uint16 {
 	return uint16(len(m.msg)) - uint16(m.curOffset)
 }
@@ -102,8 +114,8 @@ func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 	return q, nil
 }
 
-func (m *Parser) Skip(length int) error {
-	if int(m.availMsgData()) < length {
+func (m *Parser) Skip(length uint16) error {
+	if m.availMsgData() < length {
 		return errInvalidDNSMessage
 	}
 	m.curOffset += uint16(length)
