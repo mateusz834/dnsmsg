@@ -14,7 +14,7 @@ func MakeQuery[T name](msg []byte, id uint16, flags Flags, q Question[T]) []byte
 	msg = appendUint16(msg, 0)
 
 	// Question
-	appendName(msg, q.Name)
+	msg = appendName(msg, q.Name)
 
 	msg = appendUint16(msg, uint16(q.Type))
 	msg = appendUint16(msg, uint16(q.Class))
@@ -31,7 +31,7 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 	msg = appendUint16(msg, 1)
 
 	// Question
-	appendName(msg, q.Name)
+	msg = appendName(msg, q.Name)
 	msg = appendUint16(msg, uint16(q.Type))
 	msg = appendUint16(msg, uint16(q.Class))
 
