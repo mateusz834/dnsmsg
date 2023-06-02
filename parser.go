@@ -122,7 +122,7 @@ func (m *Parser) Skip(length uint16) error {
 	return nil
 }
 
-func (m *Parser) Name() (ParserName, error) {
+func (m *Parser) Name() (ParserName, uint16, error) {
 	name := ParserName{
 		m:         m,
 		nameStart: m.curOffset,
@@ -130,11 +130,11 @@ func (m *Parser) Name() (ParserName, error) {
 
 	offset, err := name.unpack()
 	if err != nil {
-		return ParserName{}, err
+		return ParserName{}, 0, err
 	}
 
 	m.curOffset += offset
-	return name, nil
+	return name, offset, nil
 }
 
 func (m *Parser) RawResource(length uint16) ([]byte, error) {
@@ -241,9 +241,14 @@ func (m *Parser) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
 const ptrLoopCount = 16
 
 type ParserName struct {
-	m         *Parser
-	nameStart uint16
-	rawLen    uint8
+	m          *Parser
+	nameStart  uint16
+	rawLen     uint8
+	compressed bool
+}
+
+func (m *ParserName) Compressed() bool {
+	return m.compressed
 }
 
 func (m *ParserName) RawLen() uint8 {
@@ -280,6 +285,7 @@ func (m *ParserName) unpack() (uint16, error) {
 			}
 
 			i = int(uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1]))
+			m.compressed = true
 			continue
 		}
 
