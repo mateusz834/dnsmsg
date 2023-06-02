@@ -63,8 +63,6 @@ type Name struct {
 	n string
 }
 
-func (Name) name() {}
-
 func NewName(name string) (Name, error) {
 	if !isValidEscapedName(name) {
 		return Name{}, errInvalidName

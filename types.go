@@ -1,14 +1,25 @@
 package dnsmsg
 
+import "strconv"
+
 type EDNS0 struct {
 	Payload uint16
 }
 
 type name interface {
-	name()
+	ParserName | Name
 }
 
 type Type uint16
+
+func (t Type) String() string {
+	switch t {
+	case TypeA:
+		return "A"
+	default:
+		return "0x" + strconv.FormatInt(int64(t), 16)
+	}
+}
 
 const (
 	TypeA     Type = 1
@@ -23,6 +34,15 @@ const (
 )
 
 type Class uint16
+
+func (t Class) String() string {
+	switch t {
+	case ClassIN:
+		return "IN"
+	default:
+		return "0x" + strconv.FormatInt(int64(t), 16)
+	}
+}
 
 const (
 	ClassIN Class = 1
@@ -47,8 +67,32 @@ const (
 
 type RCode uint8
 
+func (r RCode) String() string {
+	switch r {
+	case RCodeSuccess:
+		return "success"
+	case RCodeFormatError:
+		return "format erro"
+	case RCodeServerFail:
+		return "server failure"
+	case RCodeNameError:
+		return "name error"
+	case RCodeNotImpl:
+		return "not implemented"
+	case RCodeRefused:
+		return "refused"
+	default:
+		return "0x" + strconv.FormatInt(int64(r), 16)
+	}
+}
+
 const (
-	RCodeSuccess RCode = 0
+	RCodeSuccess RCode = iota
+	RCodeFormatError
+	RCodeServerFail
+	RCodeNameError
+	RCodeNotImpl
+	RCodeRefused
 )
 
 type Flags uint16

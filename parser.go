@@ -234,8 +234,6 @@ type ParserName struct {
 	rawLen    uint8
 }
 
-func (ParserName) name() {}
-
 func (m *ParserName) RawLen() uint8 {
 	return m.rawLen
 }
