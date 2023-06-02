@@ -63,6 +63,28 @@ type Name struct {
 	n string
 }
 
+func (n Name) String() string {
+	return n.n
+}
+
+func (n Name) IsRooted() bool {
+	if n.n[len(n.n)-1] != '.' {
+		return false
+	}
+
+	endSlashCount := 0
+	for i := len(n.n) - 2; i > 0; i-- {
+		v := n.n[i]
+		if v != '\\' {
+			endSlashCount++
+			continue
+		}
+		break
+	}
+
+	return endSlashCount%2 != 0
+}
+
 func NewName(name string) (Name, error) {
 	if !isValidEscapedName(name) {
 		return Name{}, errInvalidName
