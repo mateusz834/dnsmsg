@@ -24,7 +24,7 @@ func (t Type) String() string {
 	case TypeCNAME:
 		return "CNAME"
 	case TypeSOA:
-		return "SOE"
+		return "SOA"
 	case TypePTR:
 		return "PTR"
 	case TypeMX:
