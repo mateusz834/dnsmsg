@@ -253,6 +253,7 @@ func (r ResourceTXT) Concat() []byte {
 
 func (r ResourceTXT) String() string {
 	var b strings.Builder
+	b.Grow(r.concatLength())
 	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
 		b.Write(r.TXT[i : i+int(r.TXT[i])])
 	}
