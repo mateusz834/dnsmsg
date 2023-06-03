@@ -1,6 +1,9 @@
 package dnsmsg
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type EDNS0 struct {
 	Payload uint16
@@ -230,6 +233,30 @@ type ResourceTXT struct {
 	// TXT is as defined by RFC 1035 a "One or more <character-string>s"
 	// so it is a one or more byte-length prefixed data
 	TXT []byte
+}
+
+func (r ResourceTXT) concatLength() int {
+	length := 0
+	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
+		length += len(r.TXT[i : i+int(r.TXT[i])])
+	}
+	return length
+}
+
+func (r ResourceTXT) Concat() []byte {
+	buf := make([]byte, 0, r.concatLength())
+	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
+		buf = append(buf, r.TXT[i:i+int(r.TXT[i])]...)
+	}
+	return buf
+}
+
+func (r ResourceTXT) String() string {
+	var b strings.Builder
+	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
+		b.Write(r.TXT[i : i+int(r.TXT[i])])
+	}
+	return b.String()
 }
 
 type ResourceAAAA struct {
