@@ -16,6 +16,22 @@ func (t Type) String() string {
 	switch t {
 	case TypeA:
 		return "A"
+	case TypeNS:
+		return "NS"
+	case TypeCNAME:
+		return "CNAME"
+	case TypeSOA:
+		return "SOE"
+	case TypePTR:
+		return "PTR"
+	case TypeMX:
+		return "MX"
+	case TypeTXT:
+		return "TXT"
+	case TypeAAAA:
+		return "AAAA"
+	case TypeOPT:
+		return "OPT"
 	default:
 		return "0x" + strconv.FormatInt(int64(t), 16)
 	}
