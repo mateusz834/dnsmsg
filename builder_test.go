@@ -1,6 +1,7 @@
 package dnsmsg
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -109,7 +110,7 @@ func TestAppendEscapedName(t *testing.T) {
 			continue
 		}
 
-		packedName := appendEscapedName(nil, v.name)
+		packedName := appendEscapedName(nil, true, v.name)
 
 		p, err := NewParser(packedName)
 		if err != nil {
@@ -141,5 +142,23 @@ func TestAppendEscapedName(t *testing.T) {
 		if name := name.String(); name != expectName {
 			t.Errorf("'%v' got name: %v, expected: %v\n\traw: %v", v.name, name, expectName, packedName)
 		}
+	}
+}
+
+func TestAppendConcatName(t *testing.T) {
+	n, err := NewConcatName([]Name{
+		MustNewName("www"),
+		MustNewName("go"),
+		MustNewName("dev"),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := appendConcatName(nil, n.partials)
+	expectName := []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
+	if !bytes.Equal(name, expectName) {
+		t.Fatalf("expected: %v got: %v", expectName, name)
 	}
 }

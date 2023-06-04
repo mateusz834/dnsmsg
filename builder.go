@@ -15,9 +15,9 @@ func MakeQuery[T name](msg []byte, id uint16, flags Flags, q Question[T]) []byte
 
 	// Question
 	msg = appendName(msg, q.Name)
-
 	msg = appendUint16(msg, uint16(q.Type))
 	msg = appendUint16(msg, uint16(q.Class))
+
 	return msg
 }
 
@@ -49,11 +49,13 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 func appendName[T name](buf []byte, n T) []byte {
 	switch n := any(n).(type) {
 	case Name:
-		return appendEscapedName(buf, n.n)
+		return appendEscapedName(buf, true, n.n)
+	case ConcatName:
+		return appendConcatName(buf, n.partials)
 	case ParserName:
 		return n.appendRawName(buf)
 	default:
-		panic("appendName: unsupported name type")
+		panic("internal error: unsupported name type")
 	}
 }
 
@@ -63,7 +65,27 @@ type Name struct {
 	n string
 }
 
+func NewName(name string) (Name, error) {
+	if !isValidEscapedName(name) {
+		return Name{}, errInvalidName
+	}
+	return Name{n: name}, nil
+}
+
+func MustNewName(name string) Name {
+	n, err := NewName(name)
+	if err != nil {
+		panic("MustNewName: " + err.Error())
+	}
+	return n
+
+}
+
 func (n Name) String() string {
+	// TODO: the name can be "unsafe", arbitrary bytes are allowed by
+	// NewName, only dots need to be escaped to be treated as the label content
+	// maybe this method should check whether the name is unsafe, and when it it
+	// make it safe (add escapes properly).
 	return n.n
 }
 
@@ -85,11 +107,19 @@ func (n Name) IsRooted() bool {
 	return endSlashCount%2 != 0
 }
 
-func NewName(name string) (Name, error) {
-	if !isValidEscapedName(name) {
-		return Name{}, errInvalidName
+func (n Name) charCount() int {
+	count := 0
+	for i := 0; i < len(n.n); i++ {
+		char := n.n[i]
+		if char == '\\' {
+			i++
+			if isDigit(n.n[i]) {
+				i += 2
+			}
+		}
+		count++
 	}
-	return Name{n: name}, nil
+	return count
 }
 
 func isValidEscapedName(m string) bool {
@@ -156,7 +186,7 @@ func isValidEscapedName(m string) bool {
 	return true
 }
 
-func appendEscapedName(buf []byte, m string) []byte {
+func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
 	labelLength := byte(0)
 
 	labelIndex := len(buf)
@@ -191,7 +221,7 @@ func appendEscapedName(buf []byte, m string) []byte {
 		buf[labelIndex] = labelLength
 	}
 
-	if buf[len(buf)-1] != 0 {
+	if explicitEndRoot && buf[len(buf)-1] != 0 {
 		buf = append(buf, 0)
 	}
 
@@ -211,4 +241,53 @@ func decodeDDD(ddd [3]byte) (uint8, bool) {
 		return 0, false
 	}
 	return uint8(num), true
+}
+
+type ConcatName struct {
+	partials []Name
+}
+
+func NewConcatName(names []Name) (ConcatName, error) {
+	if !isValidConcatName(names) {
+		return ConcatName{}, errInvalidName
+	}
+	return ConcatName{partials: names}, nil
+}
+
+func (n ConcatName) String() string {
+	name := ""
+	for _, v := range n.partials[:len(n.partials)-1] {
+		name += v.String() + "."
+	}
+	return name + n.partials[len(n.partials)-1].String()
+}
+
+func isValidConcatName(names []Name) bool {
+	if len(names) == 0 {
+		return false
+	}
+
+	rootName := names[len(names)-1]
+
+	nameLength := rootName.charCount()
+
+	for _, suffix := range names[:len(names)-1] {
+		if suffix.IsRooted() {
+			return false
+		}
+		nameLength += suffix.charCount() + 1
+	}
+
+	if nameLength > 254 || nameLength == 254 && !rootName.IsRooted() {
+		return false
+	}
+
+	return true
+}
+
+func appendConcatName(buf []byte, names []Name) []byte {
+	for _, suffix := range names[:len(names)-1] {
+		buf = appendEscapedName(buf, false, suffix.n)
+	}
+	return appendEscapedName(buf, true, names[len(names)-1].n)
 }
