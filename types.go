@@ -10,7 +10,7 @@ type EDNS0 struct {
 }
 
 type name interface {
-	ParserName | Name | ConcatName
+	ParserName | Name | SearchName
 }
 
 type Type uint16

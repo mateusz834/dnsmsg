@@ -47,11 +47,15 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 }
 
 func appendName[T name](buf []byte, n T) []byte {
+	if isZero(n) {
+		panic("cannot use zero value of any name type")
+	}
+
 	switch n := any(n).(type) {
 	case Name:
 		return appendEscapedName(buf, true, n.n)
-	case ConcatName:
-		return appendConcatName(buf, n.partials)
+	case SearchName:
+		return appendSearchName(buf, n)
 	case ParserName:
 		return n.appendRawName(buf)
 	default:
@@ -59,12 +63,21 @@ func appendName[T name](buf []byte, n T) []byte {
 	}
 }
 
+func isZero[T comparable](t T) bool {
+	return t == *new(T)
+}
+
 var errInvalidName = errors.New("invalid name")
 
+// Name is a wrapper around a string DNS name representation.
+// Zero value of this type shouldn't be used, unless specified otherwise.
 type Name struct {
 	n string
 }
 
+// NewName creates a new Name.
+// The name might contain escape characters like: '\DDD' and '\X',
+// where D is a digit and X is any possible character, except digit.
 func NewName(name string) (Name, error) {
 	if !isValidEscapedName(name) {
 		return Name{}, errInvalidName
@@ -72,13 +85,13 @@ func NewName(name string) (Name, error) {
 	return Name{n: name}, nil
 }
 
+// MustNewName creates a new Name, panics when it is invalid.
 func MustNewName(name string) Name {
 	n, err := NewName(name)
 	if err != nil {
 		panic("MustNewName: " + err.Error())
 	}
 	return n
-
 }
 
 func (n Name) String() string {
@@ -105,6 +118,28 @@ func (n Name) IsRooted() bool {
 	}
 
 	return endSlashCount%2 != 0
+}
+
+func (n Name) labelCount() int {
+	count := 0
+	if !n.IsRooted() {
+		count++
+	}
+
+	for i := 0; i < len(n.n); i++ {
+		char := n.n[i]
+		switch char {
+		case '\\':
+			i++
+			if isDigit(n.n[i]) {
+				i += 2
+			}
+		case '.':
+			count++
+		}
+	}
+
+	return count
 }
 
 func (n Name) charCount() int {
@@ -243,51 +278,90 @@ func decodeDDD(ddd [3]byte) (uint8, bool) {
 	return uint8(num), true
 }
 
-type ConcatName struct {
-	partials []Name
+type SearchNameIterator struct {
+	name          Name
+	search        []Name
+	absoluteFirst bool
+	absoluteDone  bool
+	done          bool
 }
 
-func NewConcatName(names []Name) (ConcatName, error) {
-	if !isValidConcatName(names) {
-		return ConcatName{}, errInvalidName
+func NewSearchNameIterator(name Name, search []Name, ndots int) SearchNameIterator {
+	if name.IsRooted() {
+		return SearchNameIterator{name: name}
 	}
-	return ConcatName{partials: names}, nil
+	return SearchNameIterator{name, search, name.labelCount() >= ndots, false, false}
 }
 
-func (n ConcatName) String() string {
-	name := ""
-	for _, v := range n.partials[:len(n.partials)-1] {
-		name += v.String() + "."
-	}
-	return name + n.partials[len(n.partials)-1].String()
-}
-
-func isValidConcatName(names []Name) bool {
-	if len(names) == 0 {
-		return false
+func (s *SearchNameIterator) Next() (SearchName, bool) {
+	if s.done {
+		return SearchName{}, false
 	}
 
-	rootName := names[len(names)-1]
-
-	nameLength := rootName.charCount()
-
-	for _, suffix := range names[:len(names)-1] {
-		if suffix.IsRooted() {
-			return false
+	if !s.absoluteDone && s.absoluteFirst {
+		n, err := NewSearchName(Name{}, s.name)
+		if err != nil {
+			panic("internal error")
 		}
-		nameLength += suffix.charCount() + 1
+		s.absoluteDone = true
+		return n, true
 	}
 
-	if nameLength > 254 || nameLength == 254 && !rootName.IsRooted() {
-		return false
+	for i, suffix := range s.search {
+		name, err := NewSearchName(s.name, suffix)
+		if err != nil {
+			continue
+		}
+		s.search = s.search[i+1:]
+		return name, false
 	}
 
-	return true
+	if !s.absoluteDone && !s.absoluteFirst {
+		n, err := NewSearchName(Name{}, s.name)
+		if err != nil {
+			panic("internal error")
+		}
+		s.absoluteDone = true
+		s.done = true
+		return n, true
+	}
+
+	s.done = true
+	return SearchName{}, false
 }
 
-func appendConcatName(buf []byte, names []Name) []byte {
-	for _, suffix := range names[:len(names)-1] {
-		buf = appendEscapedName(buf, false, suffix.n)
+// SearchName is intended for use with search domains, to avoid
+// string concatenations.
+// Zero value of this type shouldn't be used.
+type SearchName struct {
+	name   Name
+	suffix Name
+}
+
+// NewSearchName creates a new SearchName.
+// name might be a zero value, then the suffix is
+// treated as the entire name, name cannot be a rooted name.
+func NewSearchName(name, suffix Name) (SearchName, error) {
+	if !isZero(name) && name.IsRooted() {
+		return SearchName{}, errInvalidName
 	}
-	return appendEscapedName(buf, true, names[len(names)-1].n)
+	nameLength := name.charCount() + suffix.charCount()
+	if nameLength > 254 || nameLength == 254 && !suffix.IsRooted() {
+		return SearchName{}, errInvalidName
+	}
+	return SearchName{name, suffix}, nil
+}
+
+func (n SearchName) String() string {
+	if isZero(n) {
+		return ""
+	}
+	if isZero(n.name) {
+		return n.suffix.String()
+	}
+	return n.name.String() + "." + n.suffix.String()
+}
+
+func appendSearchName(buf []byte, name SearchName) []byte {
+	return appendEscapedName(appendEscapedName(buf, false, name.name.n), true, name.suffix.n)
 }

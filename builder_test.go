@@ -145,20 +145,27 @@ func TestAppendEscapedName(t *testing.T) {
 	}
 }
 
-func TestAppendConcatName(t *testing.T) {
-	n, err := NewConcatName([]Name{
-		MustNewName("www"),
-		MustNewName("go"),
-		MustNewName("dev"),
-	})
+func TestAppendSearchName(t *testing.T) {
+	n, err := NewSearchName(MustNewName("www"), MustNewName("go.dev"))
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	name := appendConcatName(nil, n.partials)
+	name := appendName(nil, n)
 	expectName := []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
 	if !bytes.Equal(name, expectName) {
 		t.Fatalf("expected: %v got: %v", expectName, name)
+	}
+}
+
+func BenchmarkIterator(b *testing.B) {
+	name := MustNewName("google.com")
+	search := []Name{MustNewName("com"), MustNewName("com"), MustNewName("internal.google.com"), MustNewName("internal.it.google.com")}
+	for i := 0; i < b.N; i++ {
+		s := NewSearchNameIterator(name, search, 1)
+		for n, ok := s.Next(); ok; n, ok = s.Next() {
+			_ = n
+		}
 	}
 }
