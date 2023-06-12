@@ -369,6 +369,21 @@ func TestNameEqual(t *testing.T) {
 	}
 }
 
+func newParserName(buf []byte) ParserName {
+	msg, err := NewParser(buf)
+	if err != nil {
+		panic(err)
+	}
+
+	m := ParserName{m: &msg, nameStart: 0}
+	_, err = m.unpack()
+	if err != nil {
+		panic(err)
+	}
+
+	return m
+}
+
 func TestSearchNameEqual(t *testing.T) {
 	n, err := NewSearchName(MustNewName("www"), MustNewName("go.dev"))
 	if err != nil {
@@ -380,26 +395,22 @@ func TestSearchNameEqual(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg, err := NewParser([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	m := ParserName{m: &msg, nameStart: 0}
-	_, err = m.unpack()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0})
 
 	if !m.EqualSearchName(n) {
 		t.Fatal("names are not equal")
+	}
+
+	if m.nameStart != 0 {
+		t.Fatal("nameStart has changed")
 	}
 
 	if !m.EqualSearchName(n2) {
 		t.Fatal("names are not equal")
 	}
 
-	if m.nameStart != 0 {
-		t.Fatal("nameStart has changed")
+	m = newParserName([]byte{3, 'w', 'w', 'w', 0})
+	if m.EqualSearchName(n) {
+		t.Fatal("names are equal")
 	}
 }
