@@ -368,3 +368,38 @@ func TestNameEqual(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchNameEqual(t *testing.T) {
+	n, err := NewSearchName(MustNewName("www"), MustNewName("go.dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n2, err := NewSearchName(Name{}, MustNewName("www.go.dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := NewParser([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := ParserName{m: &msg, nameStart: 0}
+	_, err = m.unpack()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !m.EqualSearchName(n) {
+		t.Fatal("names are not equal")
+	}
+
+	if !m.EqualSearchName(n2) {
+		t.Fatal("names are not equal")
+	}
+
+	if m.nameStart != 0 {
+		t.Fatal("nameStart has changed")
+	}
+}

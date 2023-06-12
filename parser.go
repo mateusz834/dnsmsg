@@ -355,8 +355,12 @@ func (m *ParserName) Equal(m2 *ParserName) bool {
 	}
 }
 
-// Equal reports whether m and m2 represents the same name.
+// EqualName reports whether m and m2 represents the same name.
 func (m *ParserName) EqualName(m2 Name) bool {
+	return m.equalName(m2, false)
+}
+
+func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 	im1 := m.nameStart
 	nameOffset := 0
 
@@ -370,6 +374,11 @@ func (m *ParserName) EqualName(m2 Name) bool {
 
 		if labelLength == 0 {
 			return len(m2.n) == nameOffset || ((len(m2.n)-nameOffset) == 1 && m2.n[nameOffset] == '.')
+		}
+
+		if updateNameStart && len(m2.n)-nameOffset == 0 {
+			m.nameStart = im1
+			return true
 		}
 
 		im1++
@@ -403,6 +412,12 @@ func (m *ParserName) EqualName(m2 Name) bool {
 
 		im1 += uint16(labelLength)
 	}
+}
+
+// EqualSearchName reports whether m and m2 represents the same name.
+func (m *ParserName) EqualSearchName(m2 SearchName) bool {
+	c := *m
+	return c.equalName(m2.name, true) && c.equalName(m2.suffix, false)
 }
 
 // len(a) must be caseInsensitiveEqual to len(b)
