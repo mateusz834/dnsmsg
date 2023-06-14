@@ -1,6 +1,7 @@
 package dnsmsg
 
 import (
+	"bytes"
 	"errors"
 	"math"
 )
@@ -380,14 +381,15 @@ type Builder[T name] struct {
 	compression map[string]uint16
 	buf         []byte
 
-	hdr        Header
-	curSection section
+	hdr             Header
+	curSection      section
+	firstNameLength uint8
+	firstNameOffset int
 }
 
 func StartBuilder[T name](buf []byte, id uint16, flags Flags) Builder[T] {
 	return Builder[T]{
-		compression: make(map[string]uint16),
-		buf:         append(buf, make([]byte, headerLen)...),
+		buf: append(buf, make([]byte, headerLen)...),
 		hdr: Header{
 			ID:    id,
 			Flags: flags,
@@ -525,11 +527,28 @@ func (b *Builder[T]) appendNameNotCompress(name T, addToCompressMap bool) {
 	start := len(b.buf)
 	b.buf = appendName(b.buf, name)
 	if addToCompressMap {
-		rawAsStr := string(b.buf[start:])
-		for i := 0; rawAsStr[i] != 0; i += int(rawAsStr[i]) + 1 {
-			if start+i <= maxPtr {
-				b.compression[rawAsStr[i:]] = uint16(start + i)
+		if b.firstNameOffset == 0 {
+			b.firstNameOffset = start
+			b.firstNameLength = uint8(len(b.buf) - start)
+			return
+		}
+		if b.compression == nil {
+			nameInMsg := b.buf[b.firstNameOffset:][:b.firstNameLength]
+			if !bytes.Equal(nameInMsg, b.buf[start:]) && b.firstNameOffset <= maxPtr {
+				b.compression = make(map[string]uint16)
+				b.addToCompressMap(b.buf[start:], start)
+				return
 			}
+		}
+		b.addToCompressMap(b.buf[start:], start)
+	}
+}
+
+func (b *Builder[T]) addToCompressMap(raw []byte, start int) {
+	rawAsStr := string(raw)
+	for i := 0; rawAsStr[i] != 0; i += int(rawAsStr[i]) + 1 {
+		if start+i <= maxPtr {
+			b.compression[rawAsStr[i:]] = uint16(start + i)
 		}
 	}
 }
@@ -537,6 +556,25 @@ func (b *Builder[T]) appendNameNotCompress(name T, addToCompressMap bool) {
 func (b *Builder[T]) appendNameCompress(name T, addToCompressMap bool) {
 	raw := appendName(make([]byte, 0, maxEncodedNameLen), name)
 	rawStr := ""
+
+	if addToCompressMap {
+		if b.firstNameOffset == 0 {
+			b.firstNameOffset = len(b.buf)
+			b.buf = append(b.buf, raw...)
+			b.firstNameLength = uint8(len(raw))
+			return
+		}
+
+		if b.compression == nil {
+			nameInMsg := b.buf[b.firstNameOffset:][:b.firstNameLength]
+			if bytes.Equal(nameInMsg, raw) && b.firstNameOffset <= maxPtr {
+				b.buf = appendUint16(b.buf, uint16(b.firstNameOffset)|0xC000)
+				return
+			}
+			b.compression = make(map[string]uint16)
+			b.addToCompressMap(nameInMsg, b.firstNameOffset)
+		}
+	}
 
 	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
 		ptr, ok := b.compression[string(raw[i:])]
