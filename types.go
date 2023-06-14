@@ -184,6 +184,15 @@ func (h *Header) unpack(msg [headerLen]byte) {
 	h.ARCount = unpackUint16(msg[10:12])
 }
 
+func (h *Header) pack(msg *[headerLen]byte) {
+	packUint16(msg[:2], h.ID)
+	packUint16(msg[2:4], uint16(h.Flags))
+	packUint16(msg[4:6], h.QDCount)
+	packUint16(msg[6:8], h.ANCount)
+	packUint16(msg[8:10], h.NSCount)
+	packUint16(msg[10:12], h.ARCount)
+}
+
 type Question[T name] struct {
 	Name  T
 	Type  Type

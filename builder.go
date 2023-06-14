@@ -2,6 +2,7 @@ package dnsmsg
 
 import (
 	"errors"
+	"math"
 )
 
 func MakeQuery[T name](msg []byte, id uint16, flags Flags, q Question[T]) []byte {
@@ -364,4 +365,192 @@ func (n SearchName) String() string {
 
 func appendSearchName(buf []byte, name SearchName) []byte {
 	return appendEscapedName(appendEscapedName(buf, false, name.name.n), true, name.suffix.n)
+}
+
+type section uint8
+
+const (
+	sectionQuestions section = iota
+	sectionAnswers
+	sectionAuthorities
+	sectionAdditionals
+)
+
+type Builder[T name] struct {
+	compression map[string]uint16
+	buf         []byte
+
+	hdr        Header
+	curSection section
+}
+
+func StartBuilder[T name](buf []byte, id uint16, flags Flags) Builder[T] {
+	return Builder[T]{
+		compression: make(map[string]uint16),
+		buf:         append(buf, make([]byte, headerLen)...),
+		hdr: Header{
+			ID:    id,
+			Flags: flags,
+		},
+	}
+}
+
+func (b *Builder[T]) Bytes() []byte {
+	b.hdr.pack((*[12]byte)(b.buf[0:12]))
+	return b.buf
+}
+
+func (b *Builder[T]) StartAnswers() {
+	if b.curSection != sectionQuestions {
+		panic("invalid section")
+	}
+	b.curSection = sectionAnswers
+}
+
+func (b *Builder[T]) StartAuthority() {
+	if b.curSection != sectionAnswers {
+		panic("invalid section")
+	}
+	b.curSection = sectionAuthorities
+}
+
+func (b *Builder[T]) StartAdditionals() {
+	if b.curSection != sectionAuthorities {
+		panic("invalid section")
+	}
+	b.curSection = sectionAdditionals
+}
+
+func (b *Builder[T]) incQuestionSection() {
+	if b.curSection != sectionQuestions {
+		panic("invalid section")
+	}
+	b.hdr.QDCount++
+}
+
+func (b *Builder[T]) incResurceSection() {
+	switch b.curSection {
+	case sectionAnswers:
+		b.hdr.ANCount++
+	case sectionAuthorities:
+		b.hdr.NSCount++
+	case sectionAdditionals:
+		b.hdr.ARCount++
+	default:
+		panic("invalid section")
+	}
+}
+
+func (b *Builder[T]) Question(q Question[T]) error {
+	return b.appendWithLengthLimit(func() {
+		b.incQuestionSection()
+		b.appendName(q.Name, true, true)
+		b.buf = appendUint16(b.buf, uint16(q.Type))
+		b.buf = appendUint16(b.buf, uint16(q.Class))
+	})
+}
+
+func (b *Builder[T]) ResourceA(hdr ResourceHeader[T], a ResourceA) error {
+	return b.appendWithLengthLimit(func() {
+		hdr.Length = 4
+		b.appendHeader(hdr)
+		b.buf = append(b.buf, a.A[:]...)
+	})
+}
+
+func (b *Builder[T]) ResourceAAAA(hdr ResourceHeader[T], aaaa ResourceAAAA) error {
+	return b.appendWithLengthLimit(func() {
+		hdr.Length = 16
+		b.appendHeader(hdr)
+		b.buf = append(b.buf, aaaa.AAAA[:]...)
+	})
+}
+
+func (b *Builder[T]) ResourceCNAME(hdr ResourceHeader[T], cname ResourceCNAME[T]) error {
+	return b.appendWithLengthLimit(func() {
+		b.appendResourceAutoLength(hdr, func() {
+			b.appendName(cname.CNAME, true, true)
+		})
+	})
+}
+
+func (b *Builder[T]) ResourceMX(hdr ResourceHeader[T], mx ResourceMX[T]) error {
+	return b.appendWithLengthLimit(func() {
+		b.appendResourceAutoLength(hdr, func() {
+			b.buf = appendUint16(b.buf, mx.Pref)
+			b.appendName(mx.MX, true, true)
+		})
+	})
+}
+
+var errMsgTooLong = errors.New("message too long")
+
+func (b *Builder[T]) appendWithLengthLimit(build func()) error {
+	buf := b.buf
+	build()
+	if len(b.buf) > math.MaxUint16 {
+		b.buf = buf
+		return errMsgTooLong
+	}
+	return nil
+}
+
+func (b *Builder[T]) appendResourceAutoLength(hdr ResourceHeader[T], build func()) {
+	b.appendHeader(hdr)
+	start := len(b.buf)
+	build()
+	appendUint16(b.buf[start-2:], uint16(len(b.buf)-start))
+}
+
+func (b *Builder[T]) appendHeader(hdr ResourceHeader[T]) {
+	b.incResurceSection()
+	b.appendName(hdr.Name, true, true)
+	b.buf = appendUint16(b.buf, uint16(hdr.Type))
+	b.buf = appendUint16(b.buf, uint16(hdr.Class))
+	b.buf = appendUint32(b.buf, hdr.TTL)
+	b.buf = appendUint16(b.buf, hdr.Length)
+}
+
+func (b *Builder[T]) appendName(name T, compress, addToCompressMap bool) {
+	if compress {
+		b.appendNameCompress(name, addToCompressMap)
+		return
+	}
+	b.appendNameNotCompress(name, addToCompressMap)
+}
+
+const maxPtr = 1<<14 - 1
+
+func (b *Builder[T]) appendNameNotCompress(name T, addToCompressMap bool) {
+	start := len(b.buf)
+	b.buf = appendName(b.buf, name)
+	if addToCompressMap {
+		rawAsStr := string(b.buf[start:])
+		for i := 0; rawAsStr[i] != 0; i += int(rawAsStr[i]) + 1 {
+			if start+i <= maxPtr {
+				b.compression[rawAsStr[i:]] = uint16(start + i)
+			}
+		}
+	}
+}
+
+func (b *Builder[T]) appendNameCompress(name T, addToCompressMap bool) {
+	raw := appendName(make([]byte, 0, maxEncodedNameLen), name)
+	rawStr := ""
+
+	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
+		ptr, ok := b.compression[string(raw[i:])]
+		if ok {
+			b.buf = append(b.buf, raw[:i]...)
+			b.buf = appendUint16(b.buf, ptr|0xC000)
+			return
+		}
+		if addToCompressMap && len(b.buf)+i <= maxPtr {
+			if rawStr == "" {
+				rawStr = string(raw[:])
+			}
+			b.compression[rawStr[i:]] = uint16(len(b.buf) + i)
+		}
+	}
+	b.buf = append(b.buf, raw...)
 }
