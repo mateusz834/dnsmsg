@@ -169,3 +169,43 @@ func BenchmarkIterator(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkBuilderAppendNameSameName(b *testing.B) {
+	buf := make([]byte, 0, 512)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b := StartBuilder[Name](buf, 0, Flags(0))
+		for i := 0; i < 31; i++ {
+			b.appendName(Name{"www.example.com"}, true, true)
+		}
+	}
+}
+
+func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
+	buf := make([]byte, 0, 512)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b := StartBuilder[Name](buf, 0, Flags(0))
+		b.appendName(MustNewName("www.example.com"), true, true)
+		for i := 0; i < 10; i++ {
+			b.appendName(Name{"www.example.com"}, true, true)
+			b.appendName(Name{"example.com"}, true, true)
+			b.appendName(Name{"com"}, true, true)
+		}
+	}
+}
+
+func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
+	buf := make([]byte, 0, 512)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b := StartBuilder[Name](buf, 0, Flags(0))
+		b.appendName(Name{"com"}, true, true)
+		b.appendName(Name{"example.com"}, true, true)
+		b.appendName(Name{"www.example.com"}, true, true)
+		b.appendName(Name{"dfd.www.example.com"}, true, true)
+		b.appendName(Name{"aa.dfd.www.example.com"}, true, true)
+		b.appendName(Name{"zz.aa.dfd.www.example.com"}, true, true)
+		b.appendName(Name{"cc.zz.aa.dfd.www.example.com"}, true, true)
+	}
+}
