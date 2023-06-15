@@ -513,11 +513,23 @@ func (b *Builder[T]) appendHeader(hdr ResourceHeader[T]) {
 }
 
 type nameBuilderState struct {
-	compression     map[string]uint16
-	firstNameLength uint8
+	compression map[string]uint16
 
-	fastMapLength uint8
+	// fastMap is used for small messages to avoid allocating the
+	// the compression map and string keys.
+	// fastMap is populated when the append function detects that
+	// more than one name is being used (in that case the name indicated by
+	// firstNameLength must be moved to fastMap or to the compression map,
+	// firstNameLength is not even considered when fastMapLength != 0).
 	fastMap       fastMap
+	fastMapLength uint8
+
+	// This indicates the first name length in the entire message.
+	// It is assumed that the name it placed at msg[headerLen:].
+	// This field is ignored when the fastMapLength != 0.
+	// It used to speed up the builder, when the same name
+	// is constantly beeing appended.
+	firstNameLength uint8
 }
 
 func builderAppendName[T name](b *nameBuilderState, buf []byte, name T, compress, useForCompression bool) []byte {
