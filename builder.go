@@ -49,9 +49,9 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 }
 
 func appendName[T name](buf []byte, n T) []byte {
-	if isZero(n) {
-		panic("cannot use zero value of any name type")
-	}
+	//if isZero(n) {
+	//	panic("cannot use zero value of any name type")
+	//}
 
 	switch n := any(n).(type) {
 	case Name:
@@ -60,6 +60,8 @@ func appendName[T name](buf []byte, n T) []byte {
 		return appendSearchName(buf, n)
 	case ParserName:
 		return n.appendRawName(buf)
+	case RawName:
+		return append(buf, n...)
 	default:
 		panic("internal error: unsupported name type")
 	}
@@ -368,6 +370,33 @@ func appendSearchName(buf []byte, name SearchName) []byte {
 	return appendEscapedName(appendEscapedName(buf, false, name.name.n), true, name.suffix.n)
 }
 
+type RawName []byte
+
+func NewRawName(name string) (RawName, error) {
+	var buf [maxEncodedNameLen]byte
+	return newRawName(&buf, name)
+}
+
+func MustNewRawName(name string) RawName {
+	var buf [maxEncodedNameLen]byte
+	return mustNewRawName(&buf, name)
+}
+
+func mustNewRawName(buf *[maxEncodedNameLen]byte, name string) RawName {
+	if !isValidEscapedName(name) {
+		panic("dnsmsg: MustNewName: invalid dns name")
+	}
+	return appendEscapedName(buf[:0], true, name)
+}
+
+func newRawName(buf *[maxEncodedNameLen]byte, name string) (RawName, error) {
+	// TODO: merge isValid into appendEscapedName
+	if !isValidEscapedName(name) {
+		return nil, errInvalidName
+	}
+	return appendEscapedName(buf[:0], true, name), nil
+}
+
 type section uint8
 
 const (
@@ -377,7 +406,7 @@ const (
 	sectionAdditionals
 )
 
-type Builder[T name] struct {
+type Builder struct {
 	buf []byte
 
 	nb nameBuilderState
@@ -386,8 +415,8 @@ type Builder[T name] struct {
 	hdr        Header
 }
 
-func StartBuilder[T name](buf []byte, id uint16, flags Flags) Builder[T] {
-	return Builder[T]{
+func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
+	return Builder{
 		buf: append(buf, make([]byte, headerLen)...),
 		hdr: Header{
 			ID:    id,
@@ -396,40 +425,40 @@ func StartBuilder[T name](buf []byte, id uint16, flags Flags) Builder[T] {
 	}
 }
 
-func (b *Builder[T]) Bytes() []byte {
+func (b *Builder) Bytes() []byte {
 	b.hdr.pack((*[12]byte)(b.buf[0:12]))
 	return b.buf
 }
 
-func (b *Builder[T]) StartAnswers() {
+func (b *Builder) StartAnswers() {
 	if b.curSection != sectionQuestions {
 		panic("invalid section")
 	}
 	b.curSection = sectionAnswers
 }
 
-func (b *Builder[T]) StartAuthority() {
+func (b *Builder) StartAuthority() {
 	if b.curSection != sectionAnswers {
 		panic("invalid section")
 	}
 	b.curSection = sectionAuthorities
 }
 
-func (b *Builder[T]) StartAdditionals() {
+func (b *Builder) StartAdditionals() {
 	if b.curSection != sectionAuthorities {
 		panic("invalid section")
 	}
 	b.curSection = sectionAdditionals
 }
 
-func (b *Builder[T]) incQuestionSection() {
+func (b *Builder) incQuestionSection() {
 	if b.curSection != sectionQuestions {
 		panic("invalid section")
 	}
 	b.hdr.QDCount++
 }
 
-func (b *Builder[T]) incResurceSection() {
+func (b *Builder) incResurceSection() {
 	switch b.curSection {
 	case sectionAnswers:
 		b.hdr.ANCount++
@@ -442,16 +471,16 @@ func (b *Builder[T]) incResurceSection() {
 	}
 }
 
-func (b *Builder[T]) Question(q Question[T]) error {
+func (b *Builder) Question(q Question[RawName]) error {
 	return b.appendWithLengthLimit(func() {
 		b.incQuestionSection()
-		b.buf = builderAppendName(&b.nb, b.buf, q.Name, true, true)
+		b.buf = b.nb.appendName(b.buf, q.Name, true, true)
 		b.buf = appendUint16(b.buf, uint16(q.Type))
 		b.buf = appendUint16(b.buf, uint16(q.Class))
 	})
 }
 
-func (b *Builder[T]) ResourceA(hdr ResourceHeader[T], a ResourceA) error {
+func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 	return b.appendWithLengthLimit(func() {
 		hdr.Length = 4
 		b.appendHeader(hdr)
@@ -459,7 +488,7 @@ func (b *Builder[T]) ResourceA(hdr ResourceHeader[T], a ResourceA) error {
 	})
 }
 
-func (b *Builder[T]) ResourceAAAA(hdr ResourceHeader[T], aaaa ResourceAAAA) error {
+func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
 	return b.appendWithLengthLimit(func() {
 		hdr.Length = 16
 		b.appendHeader(hdr)
@@ -467,26 +496,26 @@ func (b *Builder[T]) ResourceAAAA(hdr ResourceHeader[T], aaaa ResourceAAAA) erro
 	})
 }
 
-func (b *Builder[T]) ResourceCNAME(hdr ResourceHeader[T], cname ResourceCNAME[T]) error {
+func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
 	return b.appendWithLengthLimit(func() {
 		b.appendResourceAutoLength(hdr, func() {
-			b.buf = builderAppendName(&b.nb, b.buf, cname.CNAME, true, true)
+			b.buf = b.nb.appendName(b.buf, cname.CNAME, true, true)
 		})
 	})
 }
 
-func (b *Builder[T]) ResourceMX(hdr ResourceHeader[T], mx ResourceMX[T]) error {
+func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
 	return b.appendWithLengthLimit(func() {
 		b.appendResourceAutoLength(hdr, func() {
 			b.buf = appendUint16(b.buf, mx.Pref)
-			b.buf = builderAppendName(&b.nb, b.buf, mx.MX, true, true)
+			b.buf = b.nb.appendName(b.buf, mx.MX, true, true)
 		})
 	})
 }
 
 var errMsgTooLong = errors.New("message too long")
 
-func (b *Builder[T]) appendWithLengthLimit(build func()) error {
+func (b *Builder) appendWithLengthLimit(build func()) error {
 	buf := b.buf
 	build()
 	if len(b.buf) > math.MaxUint16 {
@@ -496,16 +525,16 @@ func (b *Builder[T]) appendWithLengthLimit(build func()) error {
 	return nil
 }
 
-func (b *Builder[T]) appendResourceAutoLength(hdr ResourceHeader[T], build func()) {
+func (b *Builder) appendResourceAutoLength(hdr ResourceHeader[RawName], build func()) {
 	b.appendHeader(hdr)
 	start := len(b.buf)
 	build()
 	appendUint16(b.buf[start-2:], uint16(len(b.buf)-start))
 }
 
-func (b *Builder[T]) appendHeader(hdr ResourceHeader[T]) {
+func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) {
 	b.incResurceSection()
-	b.buf = builderAppendName(&b.nb, b.buf, hdr.Name, true, true)
+	b.buf = b.nb.appendName(b.buf, hdr.Name, true, true)
 	b.buf = appendUint16(b.buf, uint16(hdr.Type))
 	b.buf = appendUint16(b.buf, uint16(hdr.Class))
 	b.buf = appendUint32(b.buf, hdr.TTL)
@@ -532,25 +561,25 @@ type nameBuilderState struct {
 	firstNameLength uint8
 }
 
-func builderAppendName[T name](b *nameBuilderState, buf []byte, name T, compress, useForCompression bool) []byte {
+func (b *nameBuilderState) appendName(buf []byte, name RawName, compress, useForCompression bool) []byte {
 	if useForCompression {
 		if b.firstNameLength == 0 {
-			buf = appendName(buf, name)
+			buf = append(buf, name...)
 			b.firstNameLength = uint8(len(buf) - headerLen)
 			return buf
 		}
 	}
 
 	if compress {
-		return appendNameCompress(b, name, buf, useForCompression)
+		return b.appendNameCompress(name, buf, useForCompression)
 	}
 
-	return appendNameNotCompress(b, name, buf, useForCompression)
+	return b.appendNameNotCompress(name, buf, useForCompression)
 }
 
 const maxPtr = 1<<14 - 1
 
-func addToCompressMap(b *nameBuilderState, raw []byte, start int) {
+func (b *nameBuilderState) addToCompressMap(raw []byte, start int) {
 	rawAsStr := ""
 	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
 		if start+i <= maxPtr {
@@ -574,9 +603,9 @@ func addToCompressMap(b *nameBuilderState, raw []byte, start int) {
 	}
 }
 
-func appendNameNotCompress[T name](b *nameBuilderState, name T, buf []byte, useForCompression bool) []byte {
+func (b *nameBuilderState) appendNameNotCompress(name RawName, buf []byte, useForCompression bool) []byte {
 	start := len(buf)
-	buf = appendName(buf, name)
+	buf = append(buf, name...)
 
 	if useForCompression {
 		newName := buf[start:]
@@ -585,41 +614,40 @@ func appendNameNotCompress[T name](b *nameBuilderState, name T, buf []byte, useF
 			if bytes.Equal(nameInMsg, newName) {
 				return buf
 			}
-			addToCompressMap(b, nameInMsg, headerLen)
+			b.addToCompressMap(nameInMsg, headerLen)
 		}
 
 		// TODO: this should only add names that does not exist yet.
-		addToCompressMap(b, newName, start)
+		b.addToCompressMap(newName, start)
 	}
 
 	return buf
 }
 
-func appendNameCompress[T name](b *nameBuilderState, name T, buf []byte, useForCompression bool) []byte {
-	raw := appendName(make([]byte, 0, maxEncodedNameLen), name)
-	rawStr := ""
-
+func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, useForCompression bool) []byte {
 	if useForCompression && b.fastMapLength == 0 {
 		nameInMsg := buf[headerLen : headerLen+b.firstNameLength]
-		if bytes.Equal(nameInMsg, raw) {
+		if bytes.Equal(nameInMsg, name) {
 			return appendUint16(buf, 0xC000|headerLen)
 		}
-		addToCompressMap(b, nameInMsg, headerLen)
+		b.addToCompressMap(nameInMsg, headerLen)
 	}
 
-	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
-		ptr := b.fastMap.match(b.fastMapLength, buf, raw[i:])
+	rawStr := ""
+
+	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+		ptr := b.fastMap.match(b.fastMapLength, buf, name[i:])
 		if ptr == 0 && b.compression != nil {
-			ptr = b.compression[string(raw[i:])]
+			ptr = b.compression[string(name[i:])]
 		}
 		if ptr != 0 {
-			buf = append(buf, raw[:i]...)
+			buf = append(buf, name[:i]...)
 			return appendUint16(buf, ptr|0xC000)
 		}
 		if useForCompression && len(buf)+i <= maxPtr {
 			if b.fastMapLength != fastMapMaxLength {
 				b.fastMap[b.fastMapLength] = fastMapEntry{
-					length: uint8(len(raw[i:])),
+					length: uint8(len(name[i:])),
 					ptr:    uint16(len(buf) + i),
 				}
 				b.fastMapLength++
@@ -627,7 +655,7 @@ func appendNameCompress[T name](b *nameBuilderState, name T, buf []byte, useForC
 			}
 
 			if rawStr == "" {
-				rawStr = string(raw)
+				rawStr = string(name)
 				if b.compression == nil {
 					b.compression = make(map[string]uint16)
 				}
@@ -635,7 +663,7 @@ func appendNameCompress[T name](b *nameBuilderState, name T, buf []byte, useForC
 			b.compression[rawStr[i:]] = uint16(len(buf) + i)
 		}
 	}
-	return append(buf, raw...)
+	return append(buf, name...)
 }
 
 const fastMapMaxLength = 8

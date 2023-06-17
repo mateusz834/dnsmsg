@@ -170,14 +170,19 @@ func BenchmarkIterator(b *testing.B) {
 	}
 }
 
+func mustNewRawNameValid(name string) RawName {
+	return appendEscapedName(make([]byte, 0, maxEncodedNameLen), true, name)
+}
+
 func BenchmarkBuilderAppendNameSameName(b *testing.B) {
 	buf := make([]byte, headerLen, 512)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		b := nameBuilderState{}
+		rawName := mustNewRawNameValid("www.example.com")
 		for i := 0; i < 31; i++ {
-			buf = builderAppendName(&b, buf, Name{"www.example.com"}, true, true)
+			buf = b.appendName(buf, rawName, true, true)
 		}
 	}
 }
@@ -188,11 +193,16 @@ func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		b := nameBuilderState{}
-		buf = builderAppendName(&b, buf, Name{"www.example.com"}, true, true)
+
+		raw1 := mustNewRawNameValid("www.example.com")
+		raw2 := mustNewRawNameValid("example.com")
+		raw3 := mustNewRawNameValid("com")
+
+		buf = b.appendName(buf, raw1, true, true)
 		for i := 0; i < 10; i++ {
-			buf = builderAppendName(&b, buf, Name{"www.example.com"}, true, true)
-			buf = builderAppendName(&b, buf, Name{"example.com"}, true, true)
-			buf = builderAppendName(&b, buf, Name{"com"}, true, true)
+			buf = b.appendName(buf, raw1, true, true)
+			buf = b.appendName(buf, raw2, true, true)
+			buf = b.appendName(buf, raw3, true, true)
 		}
 	}
 }
@@ -203,13 +213,13 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		b := nameBuilderState{}
-		buf = builderAppendName(&b, buf, Name{"com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"www.example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"dfd.www.example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"aa.dfd.www.example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"zz.aa.dfd.www.example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"cc.zz.aa.dfd.www.example.com"}, true, true)
-		buf = builderAppendName(&b, buf, Name{"aa.cc.zz.aa.dfd.www.example.com"}, true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("www.example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("dfd.www.example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("aa.dfd.www.example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true, true)
+		buf = b.appendName(buf, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true, true)
 	}
 }
