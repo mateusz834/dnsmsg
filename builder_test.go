@@ -223,3 +223,25 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 		buf = b.appendName(buf, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true, true)
 	}
 }
+
+func BenchmarkBuilderAppendNameAllDifferentNamesCompressable16Names(b *testing.B) {
+	names := make([]string, 16)
+
+	for i := range names {
+		if i == 0 {
+			names[i] = "com"
+			continue
+		}
+		names[i] = "aaaa" + "." + names[i-1]
+	}
+
+	buf := make([]byte, headerLen, 512)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buf := buf
+		b := nameBuilderState{}
+		for _, v := range names {
+			buf = b.appendName(buf, mustNewRawNameValid(v), true, true)
+		}
+	}
+}

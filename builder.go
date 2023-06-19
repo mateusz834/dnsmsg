@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-func MakeQuery[T name](msg []byte, id uint16, flags Flags, q Question[T]) []byte {
+func MakeQuery[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T]) []byte {
 	// Header
 	msg = appendUint16(msg, id)
 	msg = appendUint16(msg, uint16(flags))
@@ -23,7 +23,7 @@ func MakeQuery[T name](msg []byte, id uint16, flags Flags, q Question[T]) []byte
 	return msg
 }
 
-func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T], ends0 EDNS0) []byte {
+func MakeQueryWithEDNS0[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T], ends0 EDNS0) []byte {
 	// Header
 	msg = appendUint16(msg, id)
 	msg = appendUint16(msg, uint16(flags))
@@ -48,17 +48,26 @@ func MakeQueryWithEDNS0[T name](msg []byte, id uint16, flags Flags, q Question[T
 	return msg
 }
 
-func appendName[T name](buf []byte, n T) []byte {
-	//if isZero(n) {
-	//	panic("cannot use zero value of any name type")
-	//}
+func isZero[T comparable](t T) bool {
+	return t == *new(T)
+}
 
+func appendName[T RawName | ParserName | Name | SearchName](buf []byte, n T) []byte {
 	switch n := any(n).(type) {
 	case Name:
+		if isZero(n) {
+			panic("cannot use zero value of any name type")
+		}
 		return appendEscapedName(buf, true, n.n)
 	case SearchName:
+		if isZero(n) {
+			panic("cannot use zero value of any name type")
+		}
 		return appendSearchName(buf, n)
 	case ParserName:
+		if isZero(n) {
+			panic("cannot use zero value of any name type")
+		}
 		return n.appendRawName(buf)
 	case RawName:
 		return append(buf, n...)
@@ -67,16 +76,16 @@ func appendName[T name](buf []byte, n T) []byte {
 	}
 }
 
-func isZero[T comparable](t T) bool {
-	return t == *new(T)
-}
-
 var errInvalidName = errors.New("invalid name")
 
 // Name is a wrapper around a string DNS name representation.
 // Zero value of this type shouldn't be used, unless specified otherwise.
 type Name struct {
 	n string
+}
+
+func (n Name) AsRawName() RawName {
+	return appendEscapedName(make([]byte, 0, maxEncodedNameLen), true, n.n)
 }
 
 // NewName creates a new Name.
@@ -342,6 +351,10 @@ type SearchName struct {
 	suffix Name
 }
 
+func (s SearchName) AsRawName() RawName {
+	return appendSearchName(make([]byte, 0, maxEncodedNameLen), s)
+}
+
 // NewSearchName creates a new SearchName.
 // name might be a zero value, then the suffix is
 // treated as the entire name, name cannot be a rooted name.
@@ -562,12 +575,10 @@ type nameBuilderState struct {
 }
 
 func (b *nameBuilderState) appendName(buf []byte, name RawName, compress, useForCompression bool) []byte {
-	if useForCompression {
-		if b.firstNameLength == 0 {
-			buf = append(buf, name...)
-			b.firstNameLength = uint8(len(buf) - headerLen)
-			return buf
-		}
+	if useForCompression && b.firstNameLength == 0 {
+		buf = append(buf, name...)
+		b.firstNameLength = uint8(len(buf) - headerLen)
+		return buf
 	}
 
 	if compress {

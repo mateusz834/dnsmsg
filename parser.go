@@ -512,3 +512,11 @@ func (m *ParserName) appendRawName(raw []byte) []byte {
 		i += uint16(m.m.msg[i]) + 1
 	}
 }
+
+func (m *ParserName) appendRawNameNoInline(raw []byte) []byte {
+	return m.appendRawName(raw)
+}
+
+func (m *ParserName) AsRawName() RawName {
+	return m.appendRawNameNoInline(make([]byte, 0, maxEncodedNameLen))
+}

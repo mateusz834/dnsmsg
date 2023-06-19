@@ -9,10 +9,6 @@ type EDNS0 struct {
 	Payload uint16
 }
 
-type name interface {
-	ParserName | Name | SearchName | RawName
-}
-
 type Type uint16
 
 func (t Type) String() string {
@@ -193,13 +189,13 @@ func (h *Header) pack(msg *[headerLen]byte) {
 	packUint16(msg[10:12], h.ARCount)
 }
 
-type Question[T name] struct {
+type Question[T RawName | ParserName | Name | SearchName] struct {
 	Name  T
 	Type  Type
 	Class Class
 }
 
-type ResourceHeader[T name] struct {
+type ResourceHeader[T RawName | ParserName] struct {
 	Name   T
 	Type   Type
 	Class  Class
@@ -211,15 +207,15 @@ type ResourceA struct {
 	A [4]byte
 }
 
-type ResourceNS[T name] struct {
+type ResourceNS[T RawName | ParserName] struct {
 	NS T
 }
 
-type ResourceCNAME[T name] struct {
+type ResourceCNAME[T RawName | ParserName] struct {
 	CNAME T
 }
 
-type ResourceSOA[T name] struct {
+type ResourceSOA[T RawName | ParserName] struct {
 	NS      T
 	Mbox    T
 	Serial  uint32
@@ -229,11 +225,11 @@ type ResourceSOA[T name] struct {
 	Minimum uint32
 }
 
-type ResourcePTR[T name] struct {
+type ResourcePTR[T RawName | ParserName] struct {
 	PTR T
 }
 
-type ResourceMX[T name] struct {
+type ResourceMX[T RawName | ParserName] struct {
 	MX   T
 	Pref uint16
 }
