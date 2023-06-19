@@ -526,6 +526,19 @@ func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]
 	})
 }
 
+var errTXTResourceTooLong = errors.New("too long TXT resource")
+
+func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], mx ResourceTXT) error {
+	if len(mx.TXT) > math.MaxUint16 {
+		return errTXTResourceTooLong
+	}
+	hdr.Length = uint16(len(mx.TXT))
+	b.appendHeader(hdr)
+	return b.appendWithLengthLimit(func() {
+		b.buf = append(b.buf, mx.TXT...)
+	})
+}
+
 var errMsgTooLong = errors.New("message too long")
 
 func (b *Builder) appendWithLengthLimit(build func()) error {
