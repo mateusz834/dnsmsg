@@ -218,17 +218,17 @@ func (m *Parser) ResourceMX(RDLength uint16) (ResourceMX[ParserName], error) {
 	return r, nil
 }
 
-func (m *Parser) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
+func (m *Parser) ResourceTXT(RDLength uint16) (RawResourceTXT, error) {
 	if len(m.msg[m.curOffset:]) < int(RDLength) {
-		return ResourceTXT{}, errInvalidDNSMessage
+		return RawResourceTXT{}, errInvalidDNSMessage
 	}
 
-	r := ResourceTXT{
+	r := RawResourceTXT{
 		TXT: m.msg[m.curOffset : m.curOffset+RDLength],
 	}
 
 	if !r.isValid() {
-		return ResourceTXT{}, errInvalidDNSMessage
+		return RawResourceTXT{}, errInvalidDNSMessage
 	}
 
 	m.curOffset += RDLength

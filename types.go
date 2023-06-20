@@ -235,12 +235,24 @@ type ResourceMX[T RawName | ParserName] struct {
 }
 
 type ResourceTXT struct {
+	TXT [][]byte
+}
+
+type RawResourceTXT struct {
 	// TXT is as defined by RFC 1035 a "One or more <character-string>s"
 	// so it is a one or more byte-length prefixed data
 	TXT []byte
 }
 
-func (txt ResourceTXT) isValid() bool {
+func (r RawResourceTXT) ToResourceTXT() ResourceTXT {
+	var txts [][]byte
+	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
+		txts = append(txts, r.TXT[i:i+int(r.TXT[i])])
+	}
+	return ResourceTXT{TXT: txts}
+}
+
+func (txt RawResourceTXT) isValid() bool {
 	for i := 0; i < len(txt.TXT); {
 		i += int(txt.TXT[i]) + 1
 		if i == len(txt.TXT) {
@@ -250,7 +262,7 @@ func (txt ResourceTXT) isValid() bool {
 	return false
 }
 
-func (r ResourceTXT) concatLength() int {
+func (r RawResourceTXT) concatLength() int {
 	length := 0
 	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
 		length += len(r.TXT[i : i+int(r.TXT[i])])
@@ -258,7 +270,7 @@ func (r ResourceTXT) concatLength() int {
 	return length
 }
 
-func (r ResourceTXT) Concat() []byte {
+func (r RawResourceTXT) Concat() []byte {
 	buf := make([]byte, 0, r.concatLength())
 	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
 		buf = append(buf, r.TXT[i:i+int(r.TXT[i])]...)
@@ -266,7 +278,7 @@ func (r ResourceTXT) Concat() []byte {
 	return buf
 }
 
-func (r ResourceTXT) String() string {
+func (r RawResourceTXT) String() string {
 	var b strings.Builder
 	b.Grow(r.concatLength())
 	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {

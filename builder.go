@@ -528,7 +528,7 @@ func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]
 
 var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
 
-func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
+func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT) error {
 	if len(txt.TXT) > math.MaxUint16 || !txt.isValid() {
 		return errInvalidRawTXTResource
 	}
@@ -537,6 +537,29 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 	b.appendHeader(hdr)
 	return b.appendWithLengthLimit(func() {
 		b.buf = append(b.buf, txt.TXT...)
+	})
+}
+
+var errTooLongTXTString = errors.New("too long txt string")
+var errTooLongTXT = errors.New("too long txt resource")
+
+func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
+	totalLength := 0
+	for _, str := range txt.TXT {
+		if len(str) > math.MaxUint8 {
+			return errTooLongTXTString
+		}
+		totalLength += len(str)
+		if totalLength > math.MaxUint16 {
+			return errTooLongTXT
+		}
+	}
+
+	return b.appendWithLengthLimit(func() {
+		for _, str := range txt.TXT {
+			b.buf = append(b.buf, uint8(len(str)))
+			b.buf = append(b.buf, str...)
+		}
 	})
 }
 
