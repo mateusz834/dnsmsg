@@ -227,15 +227,12 @@ func (m *Parser) ResourceTXT(RDLength uint16) (ResourceTXT, error) {
 		TXT: m.msg[m.curOffset : m.curOffset+RDLength],
 	}
 
-	for i := 0; i < len(r.TXT); {
-		i += int(r.TXT[i]) + 1
-		if i == len(r.TXT) {
-			m.curOffset += RDLength
-			return r, nil
-		}
+	if !r.isValid() {
+		return ResourceTXT{}, errInvalidDNSMessage
 	}
 
-	return ResourceTXT{}, errInvalidDNSMessage
+	m.curOffset += RDLength
+	return r, nil
 }
 
 const ptrLoopCount = 16

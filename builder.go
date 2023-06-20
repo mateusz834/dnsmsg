@@ -526,16 +526,17 @@ func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]
 	})
 }
 
-var errTXTResourceTooLong = errors.New("too long TXT resource")
+var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
 
-func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], mx ResourceTXT) error {
-	if len(mx.TXT) > math.MaxUint16 {
-		return errTXTResourceTooLong
+func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
+	if len(txt.TXT) > math.MaxUint16 || !txt.isValid() {
+		return errInvalidRawTXTResource
 	}
-	hdr.Length = uint16(len(mx.TXT))
+
+	hdr.Length = uint16(len(txt.TXT))
 	b.appendHeader(hdr)
 	return b.appendWithLengthLimit(func() {
-		b.buf = append(b.buf, mx.TXT...)
+		b.buf = append(b.buf, txt.TXT...)
 	})
 }
 

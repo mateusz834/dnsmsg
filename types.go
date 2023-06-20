@@ -240,6 +240,16 @@ type ResourceTXT struct {
 	TXT []byte
 }
 
+func (txt ResourceTXT) isValid() bool {
+	for i := 0; i < len(txt.TXT); {
+		i += int(txt.TXT[i]) + 1
+		if i == len(txt.TXT) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r ResourceTXT) concatLength() int {
 	length := 0
 	for i := 0; i < len(r.TXT); i += int(r.TXT[i]) + 1 {
