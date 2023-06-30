@@ -6,240 +6,275 @@ import (
 )
 
 const (
-	maxDNSMessageLength = 1<<16 - 1
-	maxEncodedNameLen   = 255
-	maxLabelLength      = 63
+	maxEncodedNameLen = 255
+	maxLabelLength    = 63
 )
 
 var (
+	ErrSectionDone      = errors.New("parsing of current section done")
+	errInvalidOperation = errors.New("invalid operation")
+
 	errInvalidDNSMessage = errors.New("invalid dns message")
 	errInvalidDNSName    = errors.New("invalid dns name encoding")
-	errPtrLoop           = errors.New("dns compression pointer loop")
-	errDNSMsgTooLong     = errors.New("too long dns message")
+	errPtrLoop           = errors.New("compression pointer loop")
 )
 
-func NewParser(msg []byte) (Parser, error) {
-	if len(msg) > maxDNSMessageLength {
-		return Parser{}, errDNSMsgTooLong
+func Parse(msg []byte) (Parser, Header, error) {
+	if len(msg) < headerLen {
+		return Parser{}, Header{}, errInvalidDNSMessage
 	}
 
+	var hdr Header
+	hdr.unpack([headerLen]byte(msg[:headerLen]))
+
 	return Parser{
-		msg: msg,
-	}, nil
+		msg:                   msg,
+		curOffset:             headerLen,
+		remainingQuestions:    hdr.QDCount,
+		remainingAnswers:      hdr.ANCount,
+		remainingAuthorites:   hdr.NSCount,
+		remainingAddtitionals: hdr.ARCount,
+	}, hdr, nil
 }
 
 type Parser struct {
 	msg       []byte
-	curOffset uint16
+	curOffset int
+
+	nextResourceDataLength uint16
+	nextResourceType       Type
+	resourceData           bool
+	curSection             section
+
+	remainingQuestions    uint16
+	remainingAnswers      uint16
+	remainingAuthorites   uint16
+	remainingAddtitionals uint16
 }
 
-func (p *Parser) Bytes() []byte {
-	return p.msg
-}
-
-func (p *Parser) Offset() uint16 {
-	return p.curOffset
-}
-
-func (p *Parser) SetOffset(off uint16) {
-	p.curOffset = off
-}
-
-func (m *Parser) availMsgData() uint16 {
-	return uint16(len(m.msg)) - uint16(m.curOffset)
-}
-
-func (m *Parser) Header() (Header, error) {
-	var hdr Header
-	if m.availMsgData() < headerLen {
-		return hdr, errInvalidDNSMessage
+func (p *Parser) StartAnswers() error {
+	if p.curSection != sectionQuestions || p.resourceData || p.remainingQuestions != 0 {
+		return errInvalidOperation
 	}
+	p.curSection = sectionAnswers
+	return nil
+}
 
-	hdr.unpack([headerLen]byte(m.msg[m.curOffset:]))
-	m.curOffset += headerLen
-	return hdr, nil
+func (p *Parser) StartAuthority() error {
+	if p.curSection != sectionAnswers || p.resourceData || p.remainingAnswers != 0 {
+		return errInvalidOperation
+	}
+	p.curSection = sectionAuthorities
+	return nil
+}
+
+func (p *Parser) StartAdditionals() error {
+	if p.curSection != sectionAuthorities || p.resourceData || p.remainingAuthorites != 0 {
+		return errInvalidOperation
+	}
+	p.curSection = sectionAdditionals
+	return nil
 }
 
 func (m *Parser) Question() (Question[ParserName], error) {
-	q := Question[ParserName]{
-		Name: ParserName{
-			m:         m,
-			nameStart: m.curOffset,
-		},
+	if m.curSection != sectionQuestions {
+		return Question[ParserName]{}, errInvalidOperation
 	}
 
-	offset, err := q.Name.unpack()
+	if m.remainingQuestions == 0 {
+		return Question[ParserName]{}, ErrSectionDone
+	}
+
+	name, offset, err := m.unpackName(m.curOffset)
 	if err != nil {
 		return Question[ParserName]{}, err
 	}
 
-	tmpOffset := m.curOffset + offset
+	tmpOffset := m.curOffset + int(offset)
 
-	if len(m.msg[tmpOffset:]) < 4 {
+	if len(m.msg)-tmpOffset < 4 {
 		return Question[ParserName]{}, errInvalidDNSMessage
 	}
 
-	q.Type = Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2]))
-	q.Class = Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4]))
 	m.curOffset = tmpOffset + 4
+	m.remainingQuestions--
 
-	return q, nil
+	return Question[ParserName]{
+		Name:  name,
+		Type:  Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2])),
+		Class: Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4])),
+	}, nil
 }
 
 func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
-	q := ResourceHeader[ParserName]{
-		Name: ParserName{
-			m:         m,
-			nameStart: m.curOffset,
-		},
+	if m.resourceData {
+		return ResourceHeader[ParserName]{}, errInvalidOperation
 	}
 
-	offset, err := q.Name.unpack()
+	var count *uint16
+	switch m.curSection {
+	case sectionAnswers:
+		count = &m.remainingAnswers
+	case sectionAuthorities:
+		count = &m.remainingAuthorites
+	case sectionAdditionals:
+		count = &m.remainingAddtitionals
+	default:
+		return ResourceHeader[ParserName]{}, errInvalidOperation
+	}
+
+	if *count == 0 {
+		return ResourceHeader[ParserName]{}, ErrSectionDone
+	}
+
+	name, offset, err := m.unpackName(m.curOffset)
 	if err != nil {
 		return ResourceHeader[ParserName]{}, err
 	}
 
-	tmpOffset := m.curOffset + offset
+	tmpOffset := m.curOffset + int(offset)
 
-	if m.availMsgData() < 10 {
+	if len(m.msg)-tmpOffset < 10 {
 		return ResourceHeader[ParserName]{}, errInvalidDNSMessage
 	}
 
-	q.Type = Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2]))
-	q.Class = Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4]))
-	q.TTL = unpackUint32(m.msg[tmpOffset+4 : tmpOffset+8])
-	q.Length = unpackUint16(m.msg[tmpOffset+8 : tmpOffset+10])
+	hdr := ResourceHeader[ParserName]{
+		Name:   name,
+		Type:   Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2])),
+		Class:  Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4])),
+		TTL:    unpackUint32(m.msg[tmpOffset+4 : tmpOffset+8]),
+		Length: unpackUint16(m.msg[tmpOffset+8 : tmpOffset+10]),
+	}
+
+	m.nextResourceDataLength = hdr.Length
+	m.nextResourceType = hdr.Type
+	m.resourceData = true
+
 	m.curOffset = tmpOffset + 10
+	*count--
 
-	return q, nil
+	return hdr, nil
 }
 
-func (m *Parser) Skip(length uint16) error {
-	if m.availMsgData() < length {
-		return errInvalidDNSMessage
+func (m *Parser) ResourceA() (ResourceA, error) {
+	if !m.resourceData || m.nextResourceType != TypeA {
+		return ResourceA{}, errInvalidOperation
 	}
-	m.curOffset += uint16(length)
-	return nil
-}
-
-func (m *Parser) Name() (ParserName, uint16, error) {
-	name := ParserName{
-		m:         m,
-		nameStart: m.curOffset,
-	}
-
-	offset, err := name.unpack()
-	if err != nil {
-		return ParserName{}, 0, err
-	}
-
-	m.curOffset += offset
-	return name, offset, nil
-}
-
-func (m *Parser) RawResource(length uint16) ([]byte, error) {
-	if len(m.msg[m.curOffset:]) < int(length) {
-		return nil, errInvalidDNSMessage
-	}
-
-	msg := m.msg[m.curOffset : m.curOffset+length]
-	m.curOffset += length
-
-	return msg, nil
-}
-
-func (m *Parser) ResourceA(length uint16) (ResourceA, error) {
-	if length != 4 || m.availMsgData() < 4 {
+	if m.nextResourceDataLength != 4 || len(m.msg)-m.curOffset < 4 {
 		return ResourceA{}, errInvalidDNSMessage
 	}
-
+	a := [4]byte(m.msg[m.curOffset:])
+	m.resourceData = false
 	m.curOffset += 4
 	return ResourceA{
-		A: *(*[4]byte)(m.msg[m.curOffset-4 : m.curOffset]),
+		A: a,
 	}, nil
 }
 
-func (m *Parser) ResourceAAAA(length uint16) (ResourceAAAA, error) {
-	if length != 16 || m.availMsgData() < 16 {
+func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
+	if !m.resourceData || m.nextResourceType != TypeAAAA {
+		return ResourceAAAA{}, errInvalidOperation
+	}
+	if m.nextResourceDataLength != 16 || len(m.msg)-m.curOffset < 16 {
 		return ResourceAAAA{}, errInvalidDNSMessage
 	}
-
+	aaaa := [16]byte(m.msg[m.curOffset:])
+	m.resourceData = false
 	m.curOffset += 16
 	return ResourceAAAA{
-		AAAA: *(*[16]byte)(m.msg[m.curOffset-16 : m.curOffset]),
+		AAAA: aaaa,
 	}, nil
 }
 
-func (m *Parser) ResourceCNAME(RDLength uint16) (ResourceCNAME[ParserName], error) {
-	r := ResourceCNAME[ParserName]{
-		CNAME: ParserName{
-			m:         m,
-			nameStart: m.curOffset,
-		},
+func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
+	if !m.resourceData || m.nextResourceType != TypeCNAME {
+		return ResourceCNAME[ParserName]{}, errInvalidOperation
 	}
 
-	offset, err := r.CNAME.unpack()
+	name, offset, err := m.unpackName(m.curOffset)
 	if err != nil {
 		return ResourceCNAME[ParserName]{}, err
 	}
 
-	if offset != RDLength {
+	if offset != m.nextResourceDataLength {
 		return ResourceCNAME[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.curOffset += offset
-	return r, nil
+	m.resourceData = false
+	m.curOffset += int(offset)
+	return ResourceCNAME[ParserName]{name}, nil
 }
 
-func (m *Parser) ResourceMX(RDLength uint16) (ResourceMX[ParserName], error) {
-	r := ResourceMX[ParserName]{
-		MX: ParserName{
-			m:         m,
-			nameStart: m.curOffset + 2,
-		},
+func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
+	if !m.resourceData || m.nextResourceType != TypeMX {
+		return ResourceMX[ParserName]{}, errInvalidOperation
 	}
 
-	if m.availMsgData() < 2 {
+	if len(m.msg)-m.curOffset < 2 {
 		return ResourceMX[ParserName]{}, errInvalidDNSMessage
 	}
 
-	r.Pref = unpackUint16(m.msg[m.curOffset : m.curOffset+2])
-
-	offset, err := r.MX.unpack()
+	pref := unpackUint16(m.msg[m.curOffset:])
+	name, offset, err := m.unpackName(m.curOffset + 2)
 	if err != nil {
 		return ResourceMX[ParserName]{}, err
 	}
 
-	if offset != RDLength-2 {
+	if m.nextResourceDataLength != offset+2 {
 		return ResourceMX[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.curOffset += offset + 2
-	return r, nil
+	m.resourceData = false
+	m.curOffset += int(m.nextResourceDataLength)
+	return ResourceMX[ParserName]{
+		Pref: pref,
+		MX:   name,
+	}, nil
 }
 
-func (m *Parser) ResourceTXT(RDLength uint16) (RawResourceTXT, error) {
-	if len(m.msg[m.curOffset:]) < int(RDLength) {
+func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
+	if !m.resourceData || m.nextResourceType != TypeTXT {
+		return RawResourceTXT{}, errInvalidOperation
+	}
+
+	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
 		return RawResourceTXT{}, errInvalidDNSMessage
 	}
 
-	r := RawResourceTXT{
-		TXT: m.msg[m.curOffset : m.curOffset+RDLength],
-	}
-
+	r := RawResourceTXT{m.msg[m.curOffset : m.curOffset+int(m.nextResourceDataLength)]}
 	if !r.isValid() {
 		return RawResourceTXT{}, errInvalidDNSMessage
 	}
 
-	m.curOffset += RDLength
+	m.resourceData = false
+	m.curOffset += int(m.nextResourceDataLength)
 	return r, nil
+}
+
+func (m *Parser) SkipResourceData() error {
+	if !m.resourceData {
+		return errInvalidOperation
+	}
+	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
+		return errInvalidDNSMessage
+	}
+	m.curOffset += int(m.nextResourceDataLength)
+	m.resourceData = false
+	return nil
+}
+
+func (m *Parser) unpackName(offset int) (ParserName, uint16, error) {
+	n := ParserName{m: m, nameStart: offset}
+	off, err := n.unpack()
+	return n, off, err
 }
 
 const ptrLoopCount = 16
 
 type ParserName struct {
-	m          *Parser
-	nameStart  uint16
+	m *Parser
+
+	nameStart  int
 	rawLen     uint8
 	compressed bool
 }
@@ -321,12 +356,12 @@ func (m *ParserName) Equal(m2 *ParserName) bool {
 	for {
 		// Resolve all compression pointers of m
 		for m.m.msg[im1]&0xC0 == 0xC0 {
-			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
+			im1 = int(m.m.msg[im1]^0xC0)<<8 | int(m.m.msg[im1+1])
 		}
 
 		// Resolve all compression pointers of m2
 		for m2.m.msg[im2]&0xC0 == 0xC0 {
-			im2 = uint16(m2.m.msg[im2]^0xC0)<<8 | uint16(m2.m.msg[im2+1])
+			im2 = int(m2.m.msg[im2]^0xC0)<<8 | int(m2.m.msg[im2+1])
 		}
 
 		// if we point to the same location in the same parser, then it is equal.
@@ -343,12 +378,12 @@ func (m *ParserName) Equal(m2 *ParserName) bool {
 			return true
 		}
 
-		if !caseInsensitiveEqual(m.m.msg[im1+1:im1+1+uint16(m.m.msg[im1])], m2.m.msg[im2+1:im2+1+uint16(m2.m.msg[im2])]) {
+		if !caseInsensitiveEqual(m.m.msg[im1+1:im1+1+int(m.m.msg[im1])], m2.m.msg[im2+1:im2+1+int(m2.m.msg[im2])]) {
 			return false
 		}
 
-		im1 += uint16(m.m.msg[im1]) + 1
-		im2 += uint16(m2.m.msg[im2]) + 1
+		im1 += int(m.m.msg[im1]) + 1
+		im2 += int(m2.m.msg[im2]) + 1
 	}
 }
 
@@ -364,7 +399,7 @@ func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 	for {
 		// Resolve all compression pointers of m
 		for m.m.msg[im1]&0xC0 == 0xC0 {
-			im1 = uint16(m.m.msg[im1]^0xC0)<<8 | uint16(m.m.msg[im1+1])
+			im1 = int(m.m.msg[im1]^0xC0)<<8 | int(m.m.msg[im1+1])
 		}
 
 		labelLength := m.m.msg[im1]
@@ -379,7 +414,7 @@ func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 		}
 
 		im1++
-		for _, v := range m.m.msg[im1 : im1+uint16(labelLength)] {
+		for _, v := range m.m.msg[im1 : im1+int(labelLength)] {
 			if len(m2.n)-nameOffset == 0 {
 				return false
 			}
@@ -407,7 +442,7 @@ func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 			nameOffset++
 		}
 
-		im1 += uint16(labelLength)
+		im1 += int(labelLength)
 	}
 }
 
@@ -451,7 +486,7 @@ func (m *ParserName) String() string {
 	i := m.nameStart
 	for {
 		if m.m.msg[i]&0xC0 == 0xC0 {
-			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			i = int(m.m.msg[i]^0xC0)<<8 | int(m.m.msg[i+1])
 			continue
 		}
 
@@ -462,7 +497,7 @@ func (m *ParserName) String() string {
 			return builder.String()
 		}
 
-		for _, v := range m.m.msg[i+1 : i+uint16(m.m.msg[i])+1] {
+		for _, v := range m.m.msg[i+1 : i+int(m.m.msg[i])+1] {
 			switch {
 			case v == '.':
 				builder.WriteString("\\.")
@@ -477,7 +512,7 @@ func (m *ParserName) String() string {
 		}
 
 		builder.WriteByte('.')
-		i += uint16(m.m.msg[i]) + 1
+		i += int(m.m.msg[i]) + 1
 	}
 }
 
@@ -497,7 +532,7 @@ func (m *ParserName) appendRawName(raw []byte) []byte {
 	i := m.nameStart
 	for {
 		if m.m.msg[i]&0xC0 == 0xC0 {
-			i = uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1])
+			i = int(m.m.msg[i]^0xC0)<<8 | int(m.m.msg[i+1])
 			continue
 		}
 
@@ -505,8 +540,8 @@ func (m *ParserName) appendRawName(raw []byte) []byte {
 			return append(raw, 0)
 		}
 
-		raw = append(raw, m.m.msg[i:i+uint16(m.m.msg[i])+1]...)
-		i += uint16(m.m.msg[i]) + 1
+		raw = append(raw, m.m.msg[i:i+int(m.m.msg[i])+1]...)
+		i += int(m.m.msg[i]) + 1
 	}
 }
 

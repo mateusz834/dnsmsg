@@ -10,7 +10,7 @@ var nameUnpackTests = []struct {
 	name string
 
 	msg       []byte
-	nameStart uint16
+	nameStart int
 
 	err    error
 	offset uint8
@@ -143,13 +143,8 @@ var nameUnpackTests = []struct {
 func TestParserNameUnpack(t *testing.T) {
 	for _, v := range nameUnpackTests {
 		t.Run(v.name, func(t *testing.T) {
-			msg, err := NewParser(v.msg)
-			if err != nil {
-				t.Fatalf("unexpected NewParser() error: %v", err)
-			}
-
+			msg := Parser{msg: v.msg}
 			m := ParserName{m: &msg, nameStart: v.nameStart}
-
 			offset, err := m.unpack()
 			if err != v.err {
 				t.Fatalf("got err: %v, expected: %v", err, v.err)
@@ -168,26 +163,23 @@ func TestParserNameUnpack(t *testing.T) {
 
 func FuzzParserNameUnpack(f *testing.F) {
 	for _, v := range nameUnpackTests {
-		f.Add(v.nameStart, v.msg)
+		f.Add(uint32(v.nameStart), v.msg)
 	}
-	f.Fuzz(func(_ *testing.T, nameStart uint16, buf []byte) {
-		msg, err := NewParser(buf)
+	f.Fuzz(func(_ *testing.T, nameStart uint32, buf []byte) {
+		msg, _, err := Parse(buf)
 		if err != nil {
 			return
 		}
-		m := ParserName{m: &msg, nameStart: nameStart}
+		m := ParserName{m: &msg, nameStart: int(nameStart)}
 		m.unpack()
 	})
 }
 
-func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]ParserName {
-	msg, err := NewParser(buf)
-	if err != nil {
-		panic(err)
-	}
+func prepNameSameMsg(buf []byte, n1Start, n2Start int) [2]ParserName {
+	msg := Parser{msg: buf}
 
 	m1 := ParserName{m: &msg, nameStart: n1Start}
-	_, err = m1.unpack()
+	_, err := m1.unpack()
 	if err != nil {
 		panic(err)
 	}
@@ -204,19 +196,11 @@ func prepNameSameMsg(buf []byte, n1Start, n2Start uint16) [2]ParserName {
 	return n
 }
 
-func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start uint16) [2]ParserName {
-	msg1, err := NewParser(buf1)
-	if err != nil {
-		panic(err)
-	}
-
-	msg2, err := NewParser(buf2)
-	if err != nil {
-		panic(err)
-	}
+func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start int) [2]ParserName {
+	msg1, msg2 := Parser{msg: buf1}, Parser{msg: buf2}
 
 	m1 := ParserName{m: &msg1, nameStart: n1Start}
-	_, err = m1.unpack()
+	_, err := m1.unpack()
 	if err != nil {
 		panic(err)
 	}
@@ -370,17 +354,12 @@ func TestNameEqual(t *testing.T) {
 }
 
 func newParserName(buf []byte) ParserName {
-	msg, err := NewParser(buf)
-	if err != nil {
-		panic(err)
-	}
-
+	msg := Parser{msg: buf}
 	m := ParserName{m: &msg, nameStart: 0}
-	_, err = m.unpack()
+	_, err := m.unpack()
 	if err != nil {
 		panic(err)
 	}
-
 	return m
 }
 

@@ -112,11 +112,7 @@ func TestAppendEscapedName(t *testing.T) {
 
 		packedName := appendEscapedName(nil, true, v.name)
 
-		p, err := NewParser(packedName)
-		if err != nil {
-			continue
-		}
-
+		p := Parser{msg: packedName}
 		name := ParserName{m: &p, nameStart: 0}
 		_, err = name.unpack()
 		if err != nil {
