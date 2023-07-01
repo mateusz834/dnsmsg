@@ -94,6 +94,22 @@ func (p *Parser) StartAdditionals() error {
 	return nil
 }
 
+// End should be called after parsing every question and resource.
+// It returns an error when there are remaining bytes after the end of the message.
+//
+// This method should only be called when parsing of all sections is completed, when
+// there is nothing left to parse.
+func (p *Parser) End() error {
+	if p.resourceData || p.remainingQuestions != 0 || p.remainingAnswers != 0 ||
+		p.remainingAuthorites != 0 || p.remainingAddtitionals != 0 {
+		return errInvalidOperation
+	}
+	if len(p.msg) != p.curOffset {
+		return errInvalidDNSMessage
+	}
+	return nil
+}
+
 // Question parses a single question.
 // Returns [ErrSectionDone] when no more questions are available to parse.
 //
