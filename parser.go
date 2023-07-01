@@ -83,7 +83,7 @@ func (p *Parser) StartAuthorities() error {
 	return nil
 }
 
-// StartAuthorities changes the parsing section from authorities to additionals.
+// StartAdditionals changes the parsing section from authorities to additionals.
 //
 // Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAdditionals() error {
