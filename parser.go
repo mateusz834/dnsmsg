@@ -97,8 +97,7 @@ func (p *Parser) StartAdditionals() error {
 // Question parses a single question.
 // Returns [ErrSectionDone] when no more questions are available to parse.
 //
-// The parsing section must be set to questions (i.e. this method should
-// not be used after changing the parsing section using e.g. [Parser.StartAnswers])
+// The parsing section must be set to questions.
 func (m *Parser) Question() (Question[ParserName], error) {
 	if m.curSection != sectionQuestions {
 		return Question[ParserName]{}, errInvalidOperation
@@ -140,8 +139,7 @@ func (m *Parser) Question() (Question[ParserName], error) {
 // Returns [ErrSectionDone] when no more resources are available to parse in the
 // current section.
 //
-// The parsing section must not be set to questions (i.e. this method can only be
-// used after chaning the parsing seciton (via e.g. StartAnswers)).
+// The parsing section must not be set to questions.
 func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 	if m.resourceData {
 		return ResourceHeader[ParserName]{}, errInvalidOperation
