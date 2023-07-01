@@ -11,7 +11,10 @@ const (
 )
 
 var (
-	ErrSectionDone      = errors.New("parsing of current section done")
+	// ErrSectionDone is returned by [Parser.Question] and [Parser.ResourceHeader] when
+	// no more questions/resources are available to parse in the current section.
+	ErrSectionDone = errors.New("parsing of current section done")
+
 	errInvalidOperation = errors.New("invalid operation")
 
 	errInvalidDNSMessage = errors.New("invalid dns message")
@@ -19,6 +22,9 @@ var (
 	errPtrLoop           = errors.New("compression pointer loop")
 )
 
+// Parse starts parsing a DNS message.
+//
+// This function sets the parsing section of the Parser to questions.
 func Parse(msg []byte) (Parser, Header, error) {
 	if len(msg) < headerLen {
 		return Parser{}, Header{}, errInvalidDNSMessage
@@ -37,6 +43,9 @@ func Parse(msg []byte) (Parser, Header, error) {
 	}, hdr, nil
 }
 
+// Parser is a incremental DNS parser.
+//
+// Parser can be copied to preserve the current parsing state.
 type Parser struct {
 	msg       []byte
 	curOffset int
@@ -52,6 +61,9 @@ type Parser struct {
 	remainingAddtitionals uint16
 }
 
+// StartAnswers changes the parsing section from questions to answers.
+//
+// Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAnswers() error {
 	if p.curSection != sectionQuestions || p.resourceData || p.remainingQuestions != 0 {
 		return errInvalidOperation
@@ -60,7 +72,10 @@ func (p *Parser) StartAnswers() error {
 	return nil
 }
 
-func (p *Parser) StartAuthority() error {
+// StartAuthorities changes the parsing section from answers to authorities.
+//
+// Returns error when the parsing of the current section is not yet completed.
+func (p *Parser) StartAuthorities() error {
 	if p.curSection != sectionAnswers || p.resourceData || p.remainingAnswers != 0 {
 		return errInvalidOperation
 	}
@@ -68,6 +83,9 @@ func (p *Parser) StartAuthority() error {
 	return nil
 }
 
+// StartAuthorities changes the parsing section from authorities to additionals.
+//
+// Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAdditionals() error {
 	if p.curSection != sectionAuthorities || p.resourceData || p.remainingAuthorites != 0 {
 		return errInvalidOperation
@@ -76,6 +94,11 @@ func (p *Parser) StartAdditionals() error {
 	return nil
 }
 
+// Question parses a single question.
+// Returns [ErrSectionDone] when no more questions are available to parse.
+//
+// The parsing section must be set to questions (i.e. this method should
+// not be used after changing the parsing section using e.g. [Parser.StartAnswers])
 func (m *Parser) Question() (Question[ParserName], error) {
 	if m.curSection != sectionQuestions {
 		return Question[ParserName]{}, errInvalidOperation
@@ -106,6 +129,19 @@ func (m *Parser) Question() (Question[ParserName], error) {
 	}, nil
 }
 
+// ResourceHeader parses a single header of a resource record.
+//
+// Every call to ResourceHeader must be followed by a appropriate
+// Resource Data parsing method ([Parser.ResourceA], [Parser.ResourceAAAA],
+// [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]) depending
+// on the returned [ResourceHeader] Type field or skipped by [Parser.SkipResourceData]
+// (even when the [ResourceHeader] Length field is equal to zero).
+//
+// Returns [ErrSectionDone] when no more resources are available to parse in the
+// current section.
+//
+// The parsing section must not be set to questions (i.e. this method can only be
+// used after chaning the parsing seciton (via e.g. StartAnswers)).
 func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 	if m.resourceData {
 		return ResourceHeader[ParserName]{}, errInvalidOperation
@@ -156,6 +192,10 @@ func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 	return hdr, nil
 }
 
+// ResourceA parses a single A resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeA].
 func (m *Parser) ResourceA() (ResourceA, error) {
 	if !m.resourceData || m.nextResourceType != TypeA {
 		return ResourceA{}, errInvalidOperation
@@ -171,6 +211,10 @@ func (m *Parser) ResourceA() (ResourceA, error) {
 	}, nil
 }
 
+// ResourceAAAA parses a single AAAA resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeAAAA].
 func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
 	if !m.resourceData || m.nextResourceType != TypeAAAA {
 		return ResourceAAAA{}, errInvalidOperation
@@ -186,6 +230,10 @@ func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
 	}, nil
 }
 
+// ResourceCNAME parses a single CNAME resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeCNAME].
 func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
 	if !m.resourceData || m.nextResourceType != TypeCNAME {
 		return ResourceCNAME[ParserName]{}, errInvalidOperation
@@ -205,6 +253,10 @@ func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
 	return ResourceCNAME[ParserName]{name}, nil
 }
 
+// ResourceMX parses a single MX resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeMX].
 func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
 	if !m.resourceData || m.nextResourceType != TypeMX {
 		return ResourceMX[ParserName]{}, errInvalidOperation
@@ -232,6 +284,10 @@ func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
 	}, nil
 }
 
+// RawResourceTXT parses a single TXT resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeTXT].
 func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
 	if !m.resourceData || m.nextResourceType != TypeTXT {
 		return RawResourceTXT{}, errInvalidOperation
@@ -251,6 +307,9 @@ func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
 	return r, nil
 }
 
+// SkipResourceData skips the resource data, without parsing it in any way.
+//
+// This method can only be called after calling the [Parser.ResourceHeader] method.
 func (m *Parser) SkipResourceData() error {
 	if !m.resourceData {
 		return errInvalidOperation

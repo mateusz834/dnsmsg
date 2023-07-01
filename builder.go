@@ -450,7 +450,7 @@ func (b *Builder) StartAnswers() {
 	b.curSection = sectionAnswers
 }
 
-func (b *Builder) StartAuthority() {
+func (b *Builder) StartAuthorities() {
 	if b.curSection != sectionAnswers {
 		panic("invalid section")
 	}
