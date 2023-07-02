@@ -103,6 +103,40 @@ func (p *Parser) StartAdditionals() error {
 	return nil
 }
 
+// SkipQuestions skips all questions.
+//
+// The parsing section must be set to questions.
+func (p *Parser) SkipQuestions() error {
+	for {
+		_, err := p.Question()
+		if err != nil {
+			if err == ErrSectionDone {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+// SkipResources skips all resources in the current parsing section.
+//
+// The parsing section must not be set to questions.
+func (p *Parser) SkipResources() error {
+	for {
+		_, err := p.ResourceHeader()
+		if err != nil {
+			if err == ErrSectionDone {
+				return nil
+			}
+			return err
+		}
+
+		if err := p.SkipResourceData(); err != nil {
+			return err
+		}
+	}
+}
+
 // End should be called after parsing every question and resource.
 // It returns an error when there are remaining bytes after the end of the message.
 //
