@@ -45,6 +45,15 @@ func Parse(msg []byte) (Parser, Header, error) {
 
 // Parser is a incremental DNS parser.
 //
+// Internally the Parser contains a parsing section field, that can be changed
+// using one of these methods: [Parser.StartAnswers], [Parser.StartAuthorities], [Parser.StartAdditionals].
+// By default the parsing section is set to questions, this allows parsing the questions section by the
+// use of the [Parser.Question] method.
+// After changing the parsing section (using on of the Start* methods described above) the [Parser.ResourceHeader]
+// method in conjunction with resource parsing methods ([Parser.ResourceA], [Parser.ResourceAAAA],
+// [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]) or [Parser.SkipResourceData]
+// can be used to parse the resource records.
+//
 // Parser can be copied to preserve the current parsing state.
 type Parser struct {
 	msg       []byte
