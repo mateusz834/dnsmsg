@@ -49,7 +49,7 @@ func Parse(msg []byte) (Parser, Header, error) {
 // using one of these methods: [Parser.StartAnswers], [Parser.StartAuthorities], [Parser.StartAdditionals].
 // By default the parsing section is set to questions, this allows parsing the questions section by the
 // use of the [Parser.Question] method.
-// After changing the parsing section (using on of the Start* methods described above) the [Parser.ResourceHeader]
+// After changing the parsing section (using one of the Start* methods described above) the [Parser.ResourceHeader]
 // method in conjunction with resource parsing methods ([Parser.ResourceA], [Parser.ResourceAAAA],
 // [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]) or [Parser.SkipResourceData]
 // can be used to parse the resource records.
