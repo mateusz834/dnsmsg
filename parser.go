@@ -485,21 +485,25 @@ func (m *ParserName) Equal(m2 *ParserName) bool {
 			return true
 		}
 
+		length := int(m.m.msg[im1])
+
 		// different label lengths
-		if m.m.msg[im1] != m2.m.msg[im2] {
+		if length != int(m2.m.msg[im2]) {
 			return false
 		}
 
-		if m.m.msg[im1] == 0 {
+		if length == 0 {
 			return true
 		}
 
-		if !caseInsensitiveEqual(m.m.msg[im1+1:im1+1+int(m.m.msg[im1])], m2.m.msg[im2+1:im2+1+int(m2.m.msg[im2])]) {
+		im1++
+		im2++
+		if !caseInsensitiveEqual(m.m.msg[im1:im1+length], m2.m.msg[im2:im2+length]) {
 			return false
 		}
 
-		im1 += int(m.m.msg[im1]) + 1
-		im2 += int(m2.m.msg[im2]) + 1
+		im1 += length
+		im2 += length
 	}
 }
 
