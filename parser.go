@@ -385,8 +385,16 @@ func (m *Parser) unpackName(offset int) (ParserName, uint16, error) {
 	return n, off, err
 }
 
+// ptrLoopCount represents an upper limit of pointers that we
+// accept in a single DNS name.
 const ptrLoopCount = 16
 
+// ParserName represents a raw DNS name.
+//
+// It references the underlying message passed to the [Parser], so
+// ParserName lifetime is bounded to the Parser's lifetime, which created the ParserName.
+// ParserName should not be used after the underlying array of the slice passed to
+// the [Start] function gets modified.
 type ParserName struct {
 	m *Parser
 
@@ -395,10 +403,13 @@ type ParserName struct {
 	compressed bool
 }
 
+// Compressed returns true when the name used DNS name compression.
 func (m *ParserName) Compressed() bool {
 	return m.compressed
 }
 
+// RawLen returns the length of the raw DNS name,
+// excluding all of the compression pointers,
 func (m *ParserName) RawLen() uint8 {
 	return m.rawLen
 }
