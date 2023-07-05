@@ -391,10 +391,10 @@ const ptrLoopCount = 16
 
 // ParserName represents a raw DNS name.
 //
-// It references the underlying message passed to the [Parser], so
+// It references the underlying message referenced by the [Parser], so
 // ParserName lifetime is bounded to the Parser's lifetime, which created the ParserName.
 // ParserName should not be used after the underlying array of the slice passed to
-// the [Start] function gets modified.
+// the [Parse] function gets modified.
 type ParserName struct {
 	m *Parser
 
