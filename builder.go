@@ -684,7 +684,7 @@ func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, useForCo
 	rawStr := ""
 
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
-		ptr := b.fastMap.match(b.fastMapLength, buf, name[i:])
+		ptr := b.fastMap.match(buf, name[i:])
 		if ptr == 0 && b.compression != nil {
 			ptr = b.compression[string(name[i:])]
 		}
@@ -723,13 +723,15 @@ type fastMapEntry struct {
 	length uint8
 }
 
-func (f *fastMap) match(length uint8, msg []byte, raw []byte) uint16 {
-	if bytes.Equal(msg[headerLen:headerLen+f[0].length], raw) {
+func (f *fastMap) match(msg []byte, raw []byte) uint16 {
+	if bytes.Equal(msg[headerLen:headerLen+int(f[0].length)], raw) {
 		return f[0].ptr
 	}
 
-	for i := 1; i < int(length); i++ {
-		entry := f[i]
+	for _, entry := range f[1:] {
+		if entry.ptr == 0 {
+			break
+		}
 
 		if len(raw) == int(entry.length) {
 			msgNameIndex := int(entry.ptr)
