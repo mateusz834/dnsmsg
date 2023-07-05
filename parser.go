@@ -379,10 +379,10 @@ func (m *Parser) SkipResourceData() error {
 	return nil
 }
 
-func (m *Parser) unpackName(offset int) (ParserName, uint16, error) {
-	n := ParserName{m: m, nameStart: offset}
-	off, err := n.unpack()
-	return n, off, err
+func (m *Parser) unpackName(offset int) (n ParserName, off uint16, err error) {
+	n = ParserName{m: m, nameStart: offset}
+	off, err = n.unpack()
+	return
 }
 
 // ptrLoopCount represents an upper limit of pointers that we
