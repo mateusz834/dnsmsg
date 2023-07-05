@@ -387,7 +387,9 @@ func (m *Parser) unpackName(offset int) (ParserName, uint16, error) {
 
 // ptrLoopCount represents an upper limit of pointers that we
 // accept in a single DNS name.
-const ptrLoopCount = 16
+// There is still a poosibilitty of a false positive here, but only for names
+// that are badly compressed (pointer to a pointer, pointer to a root name).
+const ptrLoopCount = ((maxEncodedNameLen - 1) / 2)
 
 // ParserName represents a raw DNS name.
 //

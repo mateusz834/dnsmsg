@@ -134,7 +134,7 @@ var nameUnpackTests = []struct {
 
 	{name: "smaller name than label length", msg: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 5, 'd', 'e', 'v', 0}, err: errInvalidDNSName},
 	{name: "missing root label", msg: []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v'}, err: errInvalidDNSName},
-	{name: "pointer loop 1", msg: []byte{3, 'w', 'w', 'w', 0xC0, 0}, err: errPtrLoop},
+	{name: "pointer loop 1", msg: []byte{1, 'a', 0xC0, 0}, err: errPtrLoop},
 	{name: "pointer loop 2", nameStart: 2, msg: []byte{32, 32, 0xC0, 2, 32}, err: errPtrLoop},
 	{name: "reserved label bit 2", msg: []byte{0b10000000}, err: errInvalidDNSName},
 	{name: "reserved label bit 1", msg: []byte{0b01000000}, err: errInvalidDNSName},
@@ -391,5 +391,35 @@ func TestSearchNameEqual(t *testing.T) {
 	m = newParserName([]byte{3, 'w', 'w', 'w', 0})
 	if m.EqualSearchName(n) {
 		t.Fatal("names are equal")
+	}
+}
+
+func TestPtrLoopCount(t *testing.T) {
+	nb := nameBuilderState{}
+	buf := make([]byte, headerLen, 1024)
+
+	// This creates a 255b name with the maximum (sensible) pointer limit.
+	for i := 3; i <= maxEncodedNameLen; i += 2 {
+		name := make([]byte, maxEncodedNameLen)[:i]
+		for j := 0; j < i-1; j += 2 {
+			name[j] = 1
+			name[j+1] = 'a'
+		}
+		buf = nb.appendName(buf, name, true, true)
+		// append the longest name twice, so that it is also compressed directly.
+		if len(name) == maxEncodedNameLen {
+			buf = nb.appendName(buf, name, true, true)
+		}
+	}
+
+	p := Parser{msg: buf}
+	offset := headerLen
+
+	for len(buf) != offset {
+		_, n, err := p.unpackName(offset)
+		if err != nil {
+			t.Fatalf("failed to unpack name at offset: %v: %v", offset, err)
+		}
+		offset += int(n)
 	}
 }
