@@ -239,8 +239,11 @@ func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
 
 	labelIndex := len(buf)
 	buf = append(buf, 0)
+	lastRoot := false
 
 	for i := 0; i < len(m); i++ {
+		lastRoot = false
+
 		char := m[i]
 		switch char {
 		case '.':
@@ -248,6 +251,7 @@ func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
 			labelLength = 0
 			labelIndex = len(buf)
 			buf = append(buf, 0)
+			lastRoot = true
 		case '\\':
 			if isDigit(m[i+1]) {
 				labelLength++
@@ -269,7 +273,7 @@ func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
 		buf[labelIndex] = labelLength
 	}
 
-	if explicitEndRoot && buf[len(buf)-1] != 0 {
+	if explicitEndRoot && !lastRoot {
 		buf = append(buf, 0)
 	}
 

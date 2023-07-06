@@ -21,6 +21,7 @@ var newNameTests = []struct {
 	diferentAsString bool
 }{
 	{name: "", ok: false},
+	{name: "\x00", ok: true, diferentAsString: true},
 	{name: ".", ok: true},
 	{name: "com.", ok: true},
 	{name: "com", ok: true},
