@@ -245,6 +245,10 @@ func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
 	buf = append(buf, 0)
 	lastRoot := false
 
+	if m == "." {
+		return buf
+	}
+
 	for i := 0; i < len(m); i++ {
 		lastRoot = false
 
