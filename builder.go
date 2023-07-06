@@ -221,6 +221,10 @@ func isValidEscapedName(m string) bool {
 		}
 	}
 
+	if !rooted && labelLength > maxLabelLength {
+		return false
+	}
+
 	nameLength += labelLength
 
 	if inEscape {

@@ -66,6 +66,9 @@ var newNameTests = []struct {
 	{name: label63 + ".go.dev", ok: true},
 	{name: label64 + ".go.dev", ok: false},
 
+	{name: label63, ok: true},
+	{name: label64, ok: false},
+
 	// 253B non-rooted name.
 	{
 		name: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%v.go.dev", label63, label54),
