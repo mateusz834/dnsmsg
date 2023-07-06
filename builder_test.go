@@ -3,6 +3,8 @@ package dnsmsg
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -182,7 +184,7 @@ func BenchmarkBuilderAppendNameSameName(b *testing.B) {
 		b := nameBuilderState{}
 		rawName := mustNewRawNameValid("www.example.com")
 		for i := 0; i < 31; i++ {
-			buf = b.appendName(buf, rawName, true, true)
+			buf = b.appendName(buf, 0, rawName, true)
 		}
 	}
 }
@@ -198,11 +200,11 @@ func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
 		raw2 := mustNewRawNameValid("example.com")
 		raw3 := mustNewRawNameValid("com")
 
-		buf = b.appendName(buf, raw1, true, true)
+		buf = b.appendName(buf, 0, raw1, true)
 		for i := 0; i < 10; i++ {
-			buf = b.appendName(buf, raw1, true, true)
-			buf = b.appendName(buf, raw2, true, true)
-			buf = b.appendName(buf, raw3, true, true)
+			buf = b.appendName(buf, 0, raw1, true)
+			buf = b.appendName(buf, 0, raw2, true)
+			buf = b.appendName(buf, 0, raw3, true)
 		}
 	}
 }
@@ -213,14 +215,14 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		b := nameBuilderState{}
-		buf = b.appendName(buf, mustNewRawNameValid("com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("www.example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("dfd.www.example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("aa.dfd.www.example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true, true)
-		buf = b.appendName(buf, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true, true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("www.example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("dfd.www.example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
+		buf = b.appendName(buf, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
 	}
 }
 
@@ -241,7 +243,169 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable16Names(b *testing.B
 		buf := buf
 		b := nameBuilderState{}
 		for _, v := range names {
-			buf = b.appendName(buf, mustNewRawNameValid(v), true, true)
+			buf = b.appendName(buf, 0, mustNewRawNameValid(v), true)
 		}
 	}
+}
+
+func TestAppendName(t *testing.T) {
+	cases := []struct {
+		name   string
+		build  func() []byte
+		expect []byte
+	}{
+		{
+			name: "one name",
+			build: func() []byte {
+				b := nameBuilderState{}
+				return b.appendName(make([]byte, headerLen), 0, MustNewRawName("example.com."), true)
+			},
+			expect: append(
+				make([]byte, headerLen),
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			),
+		},
+
+		{
+			name: "four same names",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("example.com."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
+				return b.appendName(buf, 0, MustNewRawName("example.com."), true)
+			},
+			expect: append(
+				make([]byte, headerLen),
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				0xC0, 12,
+				0xC0, 12,
+				0xC0, 12,
+			),
+		},
+
+		{
+			name: "three compressable names",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("com."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
+				return buf
+				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+			},
+			expect: append(
+				make([]byte, headerLen),
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0xC0, 12,
+				//3, 'w', 'w', 'w', 0xC0, 17,
+			),
+		},
+
+		{
+			name: "first root name followed by three compressable names",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("com."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
+				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+			},
+			expect: append(
+				make([]byte, headerLen),
+				0,
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0xC0, 13,
+				3, 'w', 'w', 'w', 0xC0, 18,
+			),
+		},
+	}
+
+	for _, tt := range cases {
+		buf := tt.build()
+		if !bytes.Equal(buf, tt.expect) {
+			t.Fatalf("%v:\nexpected: %v\ngot:      %v", tt.name, tt.expect, buf)
+		}
+	}
+}
+
+func randStringNames(str string, seed int64) []string {
+	r := rand.New(rand.NewSource(seed))
+	var out []string
+	for len(str) != 0 {
+		chars := r.Intn(math.MaxUint16)
+		if chars > len(str) {
+			chars = len(str)
+		}
+		out = append(out, str[:chars])
+		str = str[chars:]
+	}
+	return out
+}
+
+func testAppendCompressed(buf []byte, compression map[string]uint16, name RawName) []byte {
+	first := len(compression) == 0
+
+	// The nameBuilderState has an optimization (only for the first name),
+	// that as a side effect allows compressing not only on label length boundry.
+	defer func(bufStartLength int) {
+		offset := 0
+		if len(name) > 64 {
+			offset = len(name) - 64
+		}
+
+		if first {
+			for i := offset; i < len(name)-1; i++ {
+				compression[string(name[i:])] = uint16(bufStartLength + i)
+			}
+		}
+	}(len(buf))
+
+	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+		ptr, ok := compression[string(name[i:])]
+		if ok {
+			buf = append(buf, name[:i]...)
+			return appendUint16(buf, ptr|0xC000)
+		}
+		if len(buf)+i <= maxPtr {
+			compression[string(name[i:])] = uint16(len(buf) + i)
+		}
+	}
+
+	return append(buf, name...)
+}
+
+func FuzzAppendName(f *testing.F) {
+	f.Fuzz(func(t *testing.T, seed int64, namesStr string) {
+		names := randStringNames(namesStr, seed)
+		for _, name := range names {
+			n, err := NewRawName(name)
+			if err != nil {
+				return
+			}
+			encoding := ""
+			for i := 0; i < len(n); i += int(n[i]) + 1 {
+				if i != 0 {
+					encoding += "\n"
+				}
+				encoding += fmt.Sprintf("%v %v", n[i], n[i+1:i+1+int(n[i])])
+			}
+			t.Logf("\nname %#v:\nencoding:\n%v", name, encoding)
+		}
+
+		got := make([]byte, headerLen, 1024)
+		b := nameBuilderState{}
+		for _, name := range names {
+			got = b.appendName(got, 0, MustNewRawName(name), true)
+		}
+
+		expect := make([]byte, headerLen, 1024)
+		compession := make(map[string]uint16)
+		for _, name := range names {
+			expect = testAppendCompressed(expect, compession, MustNewRawName(name))
+		}
+
+		if !bytes.Equal(got, expect) {
+			t.Fatalf("failed while appending names: %#v\n\tgot:      %v\n\texpected: %v", names, got, expect)
+		}
+	})
 }

@@ -432,7 +432,8 @@ const (
 )
 
 type Builder struct {
-	buf []byte
+	buf               []byte
+	headerStartOffset int
 
 	nb nameBuilderState
 
@@ -442,7 +443,8 @@ type Builder struct {
 
 func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	return Builder{
-		buf: append(buf, make([]byte, headerLen)...),
+		headerStartOffset: len(buf),
+		buf:               append(buf, make([]byte, headerLen)...),
 		hdr: Header{
 			ID:    id,
 			Flags: flags,
@@ -499,7 +501,7 @@ func (b *Builder) incResurceSection() {
 func (b *Builder) Question(q Question[RawName]) error {
 	return b.appendWithLengthLimit(func() {
 		b.incQuestionSection()
-		b.buf = b.nb.appendName(b.buf, q.Name, true, true)
+		b.buf = b.nb.appendName(b.buf, b.headerStartOffset, q.Name, true)
 		b.buf = appendUint16(b.buf, uint16(q.Type))
 		b.buf = appendUint16(b.buf, uint16(q.Class))
 	})
@@ -524,7 +526,7 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
 	return b.appendWithLengthLimit(func() {
 		b.appendResourceAutoLength(hdr, func() {
-			b.buf = b.nb.appendName(b.buf, cname.CNAME, true, true)
+			b.buf = b.nb.appendName(b.buf, b.headerStartOffset, cname.CNAME, true)
 		})
 	})
 }
@@ -533,7 +535,7 @@ func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]
 	return b.appendWithLengthLimit(func() {
 		b.appendResourceAutoLength(hdr, func() {
 			b.buf = appendUint16(b.buf, mx.Pref)
-			b.buf = b.nb.appendName(b.buf, mx.MX, true, true)
+			b.buf = b.nb.appendName(b.buf, b.headerStartOffset, mx.MX, true)
 		})
 	})
 }
@@ -596,7 +598,7 @@ func (b *Builder) appendResourceAutoLength(hdr ResourceHeader[RawName], build fu
 
 func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) {
 	b.incResurceSection()
-	b.buf = b.nb.appendName(b.buf, hdr.Name, true, true)
+	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, hdr.Name, true)
 	b.buf = appendUint16(b.buf, uint16(hdr.Type))
 	b.buf = appendUint16(b.buf, uint16(hdr.Class))
 	b.buf = appendUint32(b.buf, hdr.TTL)
@@ -615,7 +617,7 @@ type nameBuilderState struct {
 	fastMap       fastMap
 	fastMapLength uint8
 
-	// This indicates the first name length in the entire message.
+	// This indicates the length of the first name in the entire message.
 	// It is assumed that the name it placed at msg[headerLen:].
 	// This field is ignored when the fastMapLength != 0.
 	// It used to speed up the builder, when the same name
@@ -623,30 +625,88 @@ type nameBuilderState struct {
 	firstNameLength uint8
 }
 
-func (b *nameBuilderState) appendName(buf []byte, name RawName, compress, useForCompression bool) []byte {
-	if useForCompression && b.firstNameLength == 0 {
-		buf = append(buf, name...)
-		b.firstNameLength = uint8(len(buf) - headerLen)
-		return buf
+func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name RawName, compress bool) []byte {
+	isRootName := len(name) == 1
+	if isRootName {
+		if b.firstNameLength == 0 {
+			b.firstNameLength = 1
+		}
+		return append(buf, 0)
 	}
 
-	if compress {
-		return b.appendNameCompress(name, buf, useForCompression)
+	if b.firstNameLength == 0 {
+		b.firstNameLength = uint8(len(name))
+		return append(buf, name...)
 	}
 
-	return b.appendNameNotCompress(name, buf, useForCompression)
+	if !compress {
+		// TODO: check if already in the map (and not add it).
+		b.addToCompressMap(name, len(buf))
+		return append(buf, name...)
+	}
+
+	firstName := buf[headerStartOffset+headerLen:][:b.firstNameLength]
+	if bytes.Equal(firstName, name) {
+		return appendUint16(buf, 0xC000|headerLen)
+	}
+
+	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+		findName := name[i:]
+		startOffset := len(firstName) - len(findName)
+		if startOffset >= 0 {
+			if bytes.Equal(firstName[startOffset:], findName) {
+				var rawAsStr = ""
+				for j := 0; j < i; j += int(name[j] + 1) {
+					ptr := b.fastMap.match(buf, name[j:])
+					if ptr == 0 && b.compression != nil {
+						ptr = b.compression[string(name[i:])]
+					}
+					if ptr != 0 {
+						buf = append(buf, name[:j]...)
+						return appendUint16(buf, ptr|0xC000)
+					}
+
+					newPtr := uint16(len(buf)) + uint16(j)
+					if newPtr <= maxPtr {
+						if b.fastMapLength < fastMapMaxLength {
+							b.fastMap[b.fastMapLength] = fastMapEntry{
+								length: uint8(len(name[j:])),
+								ptr:    newPtr,
+							}
+							b.fastMapLength++
+							continue
+						}
+
+						if rawAsStr == "" {
+							rawAsStr = string(name[:])
+							if b.compression == nil {
+								b.compression = make(map[string]uint16)
+							}
+						}
+						b.compression[rawAsStr[j:]] = newPtr
+					}
+				}
+
+				buf = append(buf, name[:i]...)
+				return appendUint16(buf, 0xC000|headerLen+uint16(startOffset))
+			}
+		}
+	}
+
+	return b.appendNameCompress(name, buf, headerStartOffset)
 }
 
 const maxPtr = 1<<14 - 1
 
-func (b *nameBuilderState) addToCompressMap(raw []byte, start int) {
+func (b *nameBuilderState) addToCompressMap(raw []byte, offset int) {
 	rawAsStr := ""
 	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
-		if start+i <= maxPtr {
-			if b.fastMapLength != fastMapMaxLength {
+		newPtr := offset + i
+		if newPtr <= maxPtr {
+			if b.fastMapLength < fastMapMaxLength {
 				b.fastMap[b.fastMapLength] = fastMapEntry{
 					length: uint8(len(raw[i:])),
-					ptr:    uint16(start + i),
+					ptr:    uint16(newPtr),
 				}
 				b.fastMapLength++
 				continue
@@ -658,43 +718,13 @@ func (b *nameBuilderState) addToCompressMap(raw []byte, start int) {
 					b.compression = make(map[string]uint16)
 				}
 			}
-			b.compression[rawAsStr[i:]] = uint16(start + i)
+			b.compression[rawAsStr[i:]] = uint16(newPtr)
 		}
 	}
 }
 
-func (b *nameBuilderState) appendNameNotCompress(name RawName, buf []byte, useForCompression bool) []byte {
-	start := len(buf)
-	buf = append(buf, name...)
-
-	if useForCompression {
-		newName := buf[start:]
-		if b.fastMapLength == 0 {
-			nameInMsg := buf[headerLen : headerLen+b.firstNameLength]
-			if bytes.Equal(nameInMsg, newName) {
-				return buf
-			}
-			b.addToCompressMap(nameInMsg, headerLen)
-		}
-
-		// TODO: this should only add names that does not exist yet.
-		b.addToCompressMap(newName, start)
-	}
-
-	return buf
-}
-
-func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, useForCompression bool) []byte {
-	if useForCompression && b.fastMapLength == 0 {
-		nameInMsg := buf[headerLen : headerLen+b.firstNameLength]
-		if bytes.Equal(nameInMsg, name) {
-			return appendUint16(buf, 0xC000|headerLen)
-		}
-		b.addToCompressMap(nameInMsg, headerLen)
-	}
-
+func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, headerStartOffset int) []byte {
 	rawStr := ""
-
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 		ptr := b.fastMap.match(buf, name[i:])
 		if ptr == 0 && b.compression != nil {
@@ -704,11 +734,13 @@ func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, useForCo
 			buf = append(buf, name[:i]...)
 			return appendUint16(buf, ptr|0xC000)
 		}
-		if useForCompression && len(buf)+i <= maxPtr {
-			if b.fastMapLength != fastMapMaxLength {
+
+		newPtr := (len(buf) + i) - headerStartOffset
+		if newPtr <= maxPtr {
+			if b.fastMapLength < fastMapMaxLength {
 				b.fastMap[b.fastMapLength] = fastMapEntry{
 					length: uint8(len(name[i:])),
-					ptr:    uint16(len(buf) + i),
+					ptr:    uint16(newPtr),
 				}
 				b.fastMapLength++
 				continue
@@ -720,7 +752,7 @@ func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, useForCo
 					b.compression = make(map[string]uint16)
 				}
 			}
-			b.compression[rawStr[i:]] = uint16(len(buf) + i)
+			b.compression[rawStr[i:]] = uint16(newPtr)
 		}
 	}
 	return append(buf, name...)
@@ -736,11 +768,7 @@ type fastMapEntry struct {
 }
 
 func (f *fastMap) match(msg []byte, raw []byte) uint16 {
-	if bytes.Equal(msg[headerLen:headerLen+int(f[0].length)], raw) {
-		return f[0].ptr
-	}
-
-	for _, entry := range f[1:] {
+	for _, entry := range f {
 		if entry.ptr == 0 {
 			break
 		}
