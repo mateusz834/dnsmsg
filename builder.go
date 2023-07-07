@@ -610,16 +610,11 @@ type nameBuilderState struct {
 
 	// fastMap is used for small messages to avoid allocating the
 	// the compression map and string keys.
-	// fastMap is populated when the append function detects that
-	// more than one name is being used (in that case the name indicated by
-	// firstNameLength must be moved to fastMap or to the compression map,
-	// firstNameLength is not even considered when fastMapLength != 0).
 	fastMap       fastMap
 	fastMapLength uint8
 
 	// This indicates the length of the first name in the entire message.
-	// It is assumed that the name it placed at msg[headerLen:].
-	// This field is ignored when the fastMapLength != 0.
+	// It is assumed that the name it placed at msg[headerStartOffset+headerLen:].
 	// It used to speed up the builder, when the same name
 	// is constantly beeing appended.
 	firstNameLength uint8
