@@ -650,50 +650,45 @@ func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name Ra
 		return appendUint16(buf, 0xC000|headerLen)
 	}
 
+	rawStr := ""
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 		findName := name[i:]
 		startOffset := len(firstName) - len(findName)
-		if startOffset >= 0 {
-			if bytes.Equal(firstName[startOffset:], findName) {
-				var rawAsStr = ""
-				for j := 0; j < i; j += int(name[j] + 1) {
-					ptr := b.fastMap.match(buf, name[j:])
-					if ptr == 0 && b.compression != nil {
-						ptr = b.compression[string(name[i:])]
-					}
-					if ptr != 0 {
-						buf = append(buf, name[:j]...)
-						return appendUint16(buf, ptr|0xC000)
-					}
+		if startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName) {
+			buf = append(buf, name[:i]...)
+			return appendUint16(buf, 0xC000|headerLen+uint16(startOffset))
+		}
 
-					newPtr := uint16(len(buf)) + uint16(j)
-					if newPtr <= maxPtr {
-						if b.fastMapLength < fastMapMaxLength {
-							b.fastMap[b.fastMapLength] = fastMapEntry{
-								length: uint8(len(name[j:])),
-								ptr:    newPtr,
-							}
-							b.fastMapLength++
-							continue
-						}
+		ptr := b.fastMap.match(buf, findName)
+		if ptr == 0 && b.compression != nil {
+			ptr = b.compression[string(findName)]
+		}
+		if ptr != 0 {
+			buf = append(buf, name[:i]...)
+			return appendUint16(buf, ptr|0xC000)
+		}
 
-						if rawAsStr == "" {
-							rawAsStr = string(name[:])
-							if b.compression == nil {
-								b.compression = make(map[string]uint16)
-							}
-						}
-						b.compression[rawAsStr[j:]] = newPtr
-					}
+		newPtr := (len(buf) + i) - headerStartOffset
+		if newPtr <= maxPtr {
+			if b.fastMapLength < fastMapMaxLength {
+				b.fastMap[b.fastMapLength] = fastMapEntry{
+					length: uint8(len(findName)),
+					ptr:    uint16(newPtr),
 				}
-
-				buf = append(buf, name[:i]...)
-				return appendUint16(buf, 0xC000|headerLen+uint16(startOffset))
+				b.fastMapLength++
+				continue
 			}
+
+			if rawStr == "" {
+				rawStr = string(name)
+				if b.compression == nil {
+					b.compression = make(map[string]uint16)
+				}
+			}
+			b.compression[rawStr[i:]] = uint16(newPtr)
 		}
 	}
-
-	return b.appendNameCompress(name, buf, headerStartOffset)
+	return append(buf, name...)
 }
 
 const maxPtr = 1<<14 - 1
@@ -721,41 +716,6 @@ func (b *nameBuilderState) addToCompressMap(raw []byte, offset int) {
 			b.compression[rawAsStr[i:]] = uint16(newPtr)
 		}
 	}
-}
-
-func (b *nameBuilderState) appendNameCompress(name RawName, buf []byte, headerStartOffset int) []byte {
-	rawStr := ""
-	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
-		ptr := b.fastMap.match(buf, name[i:])
-		if ptr == 0 && b.compression != nil {
-			ptr = b.compression[string(name[i:])]
-		}
-		if ptr != 0 {
-			buf = append(buf, name[:i]...)
-			return appendUint16(buf, ptr|0xC000)
-		}
-
-		newPtr := (len(buf) + i) - headerStartOffset
-		if newPtr <= maxPtr {
-			if b.fastMapLength < fastMapMaxLength {
-				b.fastMap[b.fastMapLength] = fastMapEntry{
-					length: uint8(len(name[i:])),
-					ptr:    uint16(newPtr),
-				}
-				b.fastMapLength++
-				continue
-			}
-
-			if rawStr == "" {
-				rawStr = string(name)
-				if b.compression == nil {
-					b.compression = make(map[string]uint16)
-				}
-			}
-			b.compression[rawStr[i:]] = uint16(newPtr)
-		}
-	}
-	return append(buf, name...)
 }
 
 const fastMapMaxLength = 8
