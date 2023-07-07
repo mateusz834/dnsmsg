@@ -748,27 +748,27 @@ func (f *fastMap) match(msg []byte, raw []byte) uint16 {
 					msgNameIndex = int(uint16(msg[msgNameIndex]^0xC0)<<8 | uint16(msg[msgNameIndex+1]))
 				}
 
-				labelLengthMsg := msg[msgNameIndex]
-				labelLengthRaw := raw[rawNameIndex]
+				labelLength := msg[msgNameIndex]
 
-				if labelLengthMsg != labelLengthRaw {
+				if labelLength != raw[rawNameIndex] {
 					break
 				}
-
-				labelLength := labelLengthMsg
 
 				if labelLength == 0 {
 					return entry.ptr
 				}
 
-				labelMsg := msg[msgNameIndex+1 : 1+msgNameIndex+int(labelLength)]
-				labelRaw := raw[rawNameIndex+1 : 1+rawNameIndex+int(labelLength)]
+				msgNameIndex++
+				rawNameIndex++
+
+				labelMsg := msg[msgNameIndex : msgNameIndex+int(labelLength)]
+				labelRaw := raw[rawNameIndex : rawNameIndex+int(labelLength)]
 				if !bytes.Equal(labelMsg, labelRaw) {
 					break
 				}
 
-				msgNameIndex += int(labelLength) + 1
-				rawNameIndex += int(labelLength) + 1
+				msgNameIndex += int(labelLength)
+				rawNameIndex += int(labelLength)
 			}
 		}
 	}
