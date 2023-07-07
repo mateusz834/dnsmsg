@@ -2,9 +2,8 @@ package dnsmsg
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
-	"math"
-	"math/rand"
 	"strings"
 	"testing"
 )
@@ -328,16 +327,15 @@ func TestAppendName(t *testing.T) {
 	}
 }
 
-func randStringNames(str string, seed int64) []string {
-	r := rand.New(rand.NewSource(seed))
+func randStringNames(rand []byte) []string {
 	var out []string
-	for len(str) != 0 {
-		chars := r.Intn(math.MaxUint16)
-		if chars > len(str) {
-			chars = len(str)
+	for len(rand) >= 4 {
+		chars := int(binary.BigEndian.Uint16(rand[:4]))
+		if chars > len(rand[4:]) {
+			chars = len(rand[4:])
 		}
-		out = append(out, str[:chars])
-		str = str[chars:]
+		out = append(out, string(rand[4:4+chars]))
+		rand = rand[4+chars:]
 	}
 	return out
 }
@@ -375,8 +373,8 @@ func testAppendCompressed(buf []byte, compression map[string]uint16, name RawNam
 }
 
 func FuzzAppendName(f *testing.F) {
-	f.Fuzz(func(t *testing.T, seed int64, namesStr string) {
-		names := randStringNames(namesStr, seed)
+	f.Fuzz(func(t *testing.T, rand []byte) {
+		names := randStringNames(rand)
 		for _, name := range names {
 			n, err := NewRawName(name)
 			if err != nil {
