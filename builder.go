@@ -625,6 +625,8 @@ type nameBuilderState struct {
 	firstNameLength uint8
 }
 
+const maxPtr = 1<<14 - 1
+
 func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name RawName, compress bool) []byte {
 	isRootName := len(name) == 1
 	if isRootName {
@@ -639,13 +641,44 @@ func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name Ra
 		return append(buf, name...)
 	}
 
+	firstName := buf[headerStartOffset+headerLen:][:b.firstNameLength]
 	if !compress {
-		// TODO: check if already in the map (and not add it).
-		b.addToCompressMap(name, len(buf))
+		rawAsStr := ""
+		for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+			findName := name[i:]
+			startOffset := len(firstName) - len(findName)
+			if !(startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName)) {
+				ptr := b.fastMap.match(buf, findName)
+				if ptr == 0 && b.compression != nil {
+					ptr = b.compression[string(findName)]
+				}
+
+				if ptr == 0 {
+					newPtr := len(buf) + i
+					if newPtr <= maxPtr {
+						if b.fastMapLength < fastMapMaxLength {
+							b.fastMap[b.fastMapLength] = fastMapEntry{
+								length: uint8(len(findName)),
+								ptr:    uint16(newPtr),
+							}
+							b.fastMapLength++
+							continue
+						}
+
+						if rawAsStr == "" {
+							rawAsStr = string(name[:])
+							if b.compression == nil {
+								b.compression = make(map[string]uint16)
+							}
+						}
+						b.compression[rawAsStr[i:]] = uint16(newPtr)
+					}
+				}
+			}
+		}
 		return append(buf, name...)
 	}
 
-	firstName := buf[headerStartOffset+headerLen:][:b.firstNameLength]
 	if bytes.Equal(firstName, name) {
 		return appendUint16(buf, 0xC000|headerLen)
 	}
@@ -689,33 +722,6 @@ func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name Ra
 		}
 	}
 	return append(buf, name...)
-}
-
-const maxPtr = 1<<14 - 1
-
-func (b *nameBuilderState) addToCompressMap(raw []byte, offset int) {
-	rawAsStr := ""
-	for i := 0; raw[i] != 0; i += int(raw[i]) + 1 {
-		newPtr := offset + i
-		if newPtr <= maxPtr {
-			if b.fastMapLength < fastMapMaxLength {
-				b.fastMap[b.fastMapLength] = fastMapEntry{
-					length: uint8(len(raw[i:])),
-					ptr:    uint16(newPtr),
-				}
-				b.fastMapLength++
-				continue
-			}
-
-			if rawAsStr == "" {
-				rawAsStr = string(raw[:])
-				if b.compression == nil {
-					b.compression = make(map[string]uint16)
-				}
-			}
-			b.compression[rawAsStr[i:]] = uint16(newPtr)
-		}
-	}
 }
 
 const fastMapMaxLength = 8

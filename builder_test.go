@@ -317,6 +317,21 @@ func TestAppendName(t *testing.T) {
 				3, 'w', 'w', 'w', 0xC0, 18,
 			),
 		},
+		{
+			name: "compress=false",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("com."), true)
+				buf = b.appendName(buf, 0, MustNewRawName("example.com."), false)
+				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+			},
+			expect: append(
+				make([]byte, headerLen),
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 0xC0, 17,
+			),
+		},
 	}
 
 	for _, tt := range cases {
@@ -327,20 +342,25 @@ func TestAppendName(t *testing.T) {
 	}
 }
 
-func randStringNames(rand []byte) []string {
-	var out []string
-	for len(rand) >= 4 {
+type testName struct {
+	name     string
+	compress bool
+}
+
+func randStringNames(rand []byte) []testName {
+	var out []testName
+	for len(rand) >= 5 {
 		chars := int(binary.BigEndian.Uint16(rand[:4]))
-		if chars > len(rand[4:]) {
-			chars = len(rand[4:])
+		if chars > len(rand[5:]) {
+			chars = len(rand[5:])
 		}
-		out = append(out, string(rand[4:4+chars]))
-		rand = rand[4+chars:]
+		out = append(out, testName{string(rand[5 : 5+chars]), rand[4] < 127})
+		rand = rand[5+chars:]
 	}
 	return out
 }
 
-func testAppendCompressed(buf []byte, compression map[string]uint16, name RawName) []byte {
+func testAppendCompressed(buf []byte, compression map[string]uint16, name RawName, compress bool) []byte {
 	first := len(compression) == 0
 
 	// The nameBuilderState has an optimization (only for the first name),
@@ -360,11 +380,11 @@ func testAppendCompressed(buf []byte, compression map[string]uint16, name RawNam
 
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 		ptr, ok := compression[string(name[i:])]
-		if ok {
+		if compress && ok {
 			buf = append(buf, name[:i]...)
 			return appendUint16(buf, ptr|0xC000)
 		}
-		if len(buf)+i <= maxPtr {
+		if !ok && len(buf)+i <= maxPtr {
 			compression[string(name[i:])] = uint16(len(buf) + i)
 		}
 	}
@@ -376,7 +396,7 @@ func FuzzAppendName(f *testing.F) {
 	f.Fuzz(func(t *testing.T, rand []byte) {
 		names := randStringNames(rand)
 		for _, name := range names {
-			n, err := NewRawName(name)
+			n, err := NewRawName(name.name)
 			if err != nil {
 				return
 			}
@@ -387,19 +407,19 @@ func FuzzAppendName(f *testing.F) {
 				}
 				encoding += fmt.Sprintf("%v %v", n[i], n[i+1:i+1+int(n[i])])
 			}
-			t.Logf("\nname %#v:\nencoding:\n%v", name, encoding)
+			t.Logf("\nname %#v:\ncompress: %v\nencoding:\n%v", name.name, name.compress, encoding)
 		}
 
 		got := make([]byte, headerLen, 1024)
 		b := nameBuilderState{}
 		for _, name := range names {
-			got = b.appendName(got, 0, MustNewRawName(name), true)
+			got = b.appendName(got, 0, MustNewRawName(name.name), name.compress)
 		}
 
 		expect := make([]byte, headerLen, 1024)
 		compession := make(map[string]uint16)
 		for _, name := range names {
-			expect = testAppendCompressed(expect, compession, MustNewRawName(name))
+			expect = testAppendCompressed(expect, compession, MustNewRawName(name.name), name.compress)
 		}
 
 		if !bytes.Equal(got, expect) {
