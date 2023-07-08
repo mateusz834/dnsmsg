@@ -361,7 +361,11 @@ func randStringNames(rand []byte) []testName {
 }
 
 func testAppendCompressed(buf []byte, compression map[string]uint16, name RawName, compress bool) []byte {
-	first := len(compression) == 0
+	if len(buf) < headerLen {
+		panic("invalid use of testAppendCompressed")
+	}
+
+	first := len(buf) == headerLen
 
 	// The nameBuilderState has an optimization (only for the first name),
 	// that as a side effect allows compressing not only on label length boundry.
