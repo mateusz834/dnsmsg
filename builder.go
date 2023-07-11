@@ -432,10 +432,10 @@ const (
 )
 
 type Builder struct {
-	buf               []byte
-	headerStartOffset int
+	buf []byte
+	nb  nameBuilderState
 
-	nb nameBuilderState
+	headerStartOffset int
 
 	curSection section
 	hdr        Header
@@ -478,66 +478,86 @@ func (b *Builder) StartAdditionals() {
 	b.curSection = sectionAdditionals
 }
 
-func (b *Builder) incQuestionSection() {
+var errResourceCountLimitReached = errors.New("maximum amount of DNS resources/questions reached")
+
+func (b *Builder) incQuestionSection() error {
 	if b.curSection != sectionQuestions {
 		panic("invalid section")
 	}
+	if b.hdr.QDCount == math.MaxUint16 {
+		return errResourceCountLimitReached
+	}
 	b.hdr.QDCount++
+	return nil
 }
 
-func (b *Builder) incResurceSection() {
+func (b *Builder) incResurceSection() error {
+	var count *uint16
 	switch b.curSection {
 	case sectionAnswers:
-		b.hdr.ANCount++
+		count = &b.hdr.ANCount
 	case sectionAuthorities:
-		b.hdr.NSCount++
+		count = &b.hdr.NSCount
 	case sectionAdditionals:
-		b.hdr.ARCount++
+		count = &b.hdr.ARCount
 	default:
 		panic("invalid section")
 	}
+
+	if *count == math.MaxUint16 {
+		return errResourceCountLimitReached
+	}
+	*count++
+	return nil
 }
 
 func (b *Builder) Question(q Question[RawName]) error {
-	return b.appendWithLengthLimit(func() {
-		b.incQuestionSection()
-		b.buf = b.nb.appendName(b.buf, b.headerStartOffset, q.Name, true)
-		b.buf = appendUint16(b.buf, uint16(q.Type))
-		b.buf = appendUint16(b.buf, uint16(q.Class))
-	})
+	if err := b.incQuestionSection(); err != nil {
+		return err
+	}
+	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, q.Name, true)
+	b.buf = appendUint16(b.buf, uint16(q.Type))
+	b.buf = appendUint16(b.buf, uint16(q.Class))
+	return nil
 }
 
 func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
-	return b.appendWithLengthLimit(func() {
-		hdr.Length = 4
-		b.appendHeader(hdr)
-		b.buf = append(b.buf, a.A[:]...)
-	})
+	hdr.Length = 4
+	if err := b.appendHeader(hdr); err != nil {
+		return err
+	}
+	b.buf = append(b.buf, a.A[:]...)
+	return nil
 }
 
 func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
-	return b.appendWithLengthLimit(func() {
-		hdr.Length = 16
-		b.appendHeader(hdr)
-		b.buf = append(b.buf, aaaa.AAAA[:]...)
-	})
+	hdr.Length = 16
+	if err := b.appendHeader(hdr); err != nil {
+		return err
+	}
+	b.buf = append(b.buf, aaaa.AAAA[:]...)
+	return nil
 }
 
 func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
-	return b.appendWithLengthLimit(func() {
-		b.appendResourceAutoLength(hdr, func() {
-			b.buf = b.nb.appendName(b.buf, b.headerStartOffset, cname.CNAME, true)
-		})
-	})
+	f, err := b.appendHeaderWithLengthFixup(hdr)
+	if err != nil {
+		return err
+	}
+	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, cname.CNAME, true)
+	f.fixup(b)
+	return nil
 }
 
 func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
-	return b.appendWithLengthLimit(func() {
-		b.appendResourceAutoLength(hdr, func() {
-			b.buf = appendUint16(b.buf, mx.Pref)
-			b.buf = b.nb.appendName(b.buf, b.headerStartOffset, mx.MX, true)
-		})
-	})
+	f, err := b.appendHeaderWithLengthFixup(hdr)
+	if err != nil {
+		return err
+	}
+	b.buf = appendUint16(b.buf, mx.Pref)
+	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, mx.MX, true)
+	f.fixup(b)
+	return nil
 }
 
 var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
@@ -548,10 +568,11 @@ func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT
 	}
 
 	hdr.Length = uint16(len(txt.TXT))
-	b.appendHeader(hdr)
-	return b.appendWithLengthLimit(func() {
-		b.buf = append(b.buf, txt.TXT...)
-	})
+	if err := b.appendHeader(hdr); err != nil {
+		return err
+	}
+	b.buf = append(b.buf, txt.TXT...)
+	return nil
 }
 
 var errTooLongTXTString = errors.New("too long txt string")
@@ -569,40 +590,47 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 		}
 	}
 
-	return b.appendWithLengthLimit(func() {
-		for _, str := range txt.TXT {
-			b.buf = append(b.buf, uint8(len(str)))
-			b.buf = append(b.buf, str...)
-		}
-	})
-}
-
-var errMsgTooLong = errors.New("message too long")
-
-func (b *Builder) appendWithLengthLimit(build func()) error {
-	buf := b.buf
-	build()
-	if len(b.buf) > math.MaxUint16 {
-		b.buf = buf
-		return errMsgTooLong
+	hdr.Length = uint16(totalLength)
+	if err := b.appendHeader(hdr); err != nil {
+		return err
 	}
+
+	for _, str := range txt.TXT {
+		b.buf = append(b.buf, uint8(len(str)))
+		b.buf = append(b.buf, str...)
+	}
+
 	return nil
 }
 
-func (b *Builder) appendResourceAutoLength(hdr ResourceHeader[RawName], build func()) {
-	b.appendHeader(hdr)
-	start := len(b.buf)
-	build()
-	appendUint16(b.buf[start-2:], uint16(len(b.buf)-start))
-}
-
-func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) {
-	b.incResurceSection()
+func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) error {
+	if err := b.incResurceSection(); err != nil {
+		return err
+	}
 	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, hdr.Name, true)
 	b.buf = appendUint16(b.buf, uint16(hdr.Type))
 	b.buf = appendUint16(b.buf, uint16(hdr.Class))
 	b.buf = appendUint32(b.buf, hdr.TTL)
 	b.buf = appendUint16(b.buf, hdr.Length)
+	return nil
+}
+
+type headerLengthFixup int
+
+func (f headerLengthFixup) fixup(b *Builder) {
+	packUint16(b.buf[f-2:], uint16(len(b.buf)-int(f)))
+}
+
+func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (headerLengthFixup, error) {
+	if err := b.incResurceSection(); err != nil {
+		return 0, err
+	}
+	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, hdr.Name, true)
+	b.buf = appendUint16(b.buf, uint16(hdr.Type))
+	b.buf = appendUint16(b.buf, uint16(hdr.Class))
+	b.buf = appendUint32(b.buf, hdr.TTL)
+	b.buf = appendUint16(b.buf, hdr.Length)
+	return headerLengthFixup(len(b.buf)), nil
 }
 
 type nameBuilderState struct {
