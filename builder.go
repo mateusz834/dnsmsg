@@ -610,7 +610,7 @@ type nameBuilderState struct {
 
 	// fastMap is used for small messages to avoid allocating the
 	// the compression map and string keys.
-	fastMap       fastMap
+	fastMap       [fastMapMaxLength]fastMapEntry
 	fastMapLength uint8
 
 	// This indicates the length of the first name in the entire message.
@@ -620,57 +620,74 @@ type nameBuilderState struct {
 	firstNameLength uint8
 }
 
+const fastMapMaxLength = 8
+
+type fastMapEntry struct {
+	ptr    uint16
+	length uint8
+}
+
 const maxPtr = 1<<14 - 1
 
 func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name RawName, compress bool) []byte {
-	isRootName := len(name) == 1
-	if isRootName {
-		if b.firstNameLength == 0 {
-			b.firstNameLength = 1
-		}
-		return append(buf, 0)
-	}
-
 	if b.firstNameLength == 0 {
 		b.firstNameLength = uint8(len(name))
 		return append(buf, name...)
 	}
 
+	isRootName := len(name) == 1
+	if isRootName {
+		return append(buf, 0)
+	}
+
 	firstName := buf[headerStartOffset+headerLen:][:b.firstNameLength]
+
 	if !compress {
 		rawAsStr := ""
+
+	nextDnsLabel:
 		for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 			findName := name[i:]
 			startOffset := len(firstName) - len(findName)
-			if !(startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName)) {
-				ptr := b.fastMap.match(buf, findName)
-				if ptr == 0 && b.compression != nil {
-					ptr = b.compression[string(findName)]
+
+			if startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName) {
+				break
+			}
+
+			for _, entry := range b.fastMap {
+				if entry.length == 0 {
+					break
 				}
-
-				if ptr == 0 {
-					newPtr := len(buf) + i
-					if newPtr <= maxPtr {
-						if b.fastMapLength < fastMapMaxLength {
-							b.fastMap[b.fastMapLength] = fastMapEntry{
-								length: uint8(len(findName)),
-								ptr:    uint16(newPtr),
-							}
-							b.fastMapLength++
-							continue
-						}
-
-						if rawAsStr == "" {
-							rawAsStr = string(name[:])
-							if b.compression == nil {
-								b.compression = make(map[string]uint16)
-							}
-						}
-						b.compression[rawAsStr[i:]] = uint16(newPtr)
-					}
+				if len(findName) == int(entry.length) && isCompressedNameEqual(buf, int(entry.ptr), 0, findName) {
+					break nextDnsLabel
 				}
 			}
+
+			if b.compression[string(findName)] != 0 {
+				break
+			}
+
+			newPtr := len(buf) + i
+			if newPtr <= maxPtr {
+				if b.fastMapLength < fastMapMaxLength {
+					b.fastMap[b.fastMapLength] = fastMapEntry{
+						length: uint8(len(findName)),
+						ptr:    uint16(newPtr),
+					}
+					b.fastMapLength++
+					continue
+				}
+
+				if rawAsStr == "" {
+					rawAsStr = string(name[:])
+					if b.compression == nil {
+						b.compression = make(map[string]uint16)
+					}
+				}
+				b.compression[rawAsStr[i:]] = uint16(newPtr)
+			}
 		}
+
 		return append(buf, name...)
 	}
 
@@ -681,16 +698,24 @@ func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name Ra
 	rawStr := ""
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 		findName := name[i:]
+
 		startOffset := len(firstName) - len(findName)
 		if startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName) {
 			buf = append(buf, name[:i]...)
 			return appendUint16(buf, 0xC000|headerLen+uint16(startOffset))
 		}
 
-		ptr := b.fastMap.match(buf, findName)
-		if ptr == 0 && b.compression != nil {
-			ptr = b.compression[string(findName)]
+		for _, entry := range b.fastMap {
+			if entry.ptr == 0 {
+				break
+			}
+			if len(findName) == int(entry.length) && isCompressedNameEqual(buf, int(entry.ptr), 0, findName) {
+				buf = append(buf, name[:i]...)
+				return appendUint16(buf, entry.ptr|0xC000)
+			}
 		}
+
+		ptr := b.compression[string(findName)]
 		if ptr != 0 {
 			buf = append(buf, name[:i]...)
 			return appendUint16(buf, ptr|0xC000)
@@ -719,53 +744,30 @@ func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name Ra
 	return append(buf, name...)
 }
 
-const fastMapMaxLength = 8
-
-type fastMap [fastMapMaxLength]fastMapEntry
-
-type fastMapEntry struct {
-	ptr    uint16
-	length uint8
-}
-
-func (f *fastMap) match(msg []byte, raw []byte) uint16 {
-	for _, entry := range f {
-		if entry.ptr == 0 {
-			break
+func isCompressedNameEqual(msg []byte, msgNameIndex, rawNameIndex int, raw RawName) bool {
+	for {
+		if msg[msgNameIndex]&0xC0 == 0xC0 {
+			msgNameIndex = int(msg[msgNameIndex]^0xC0)<<8 | int(msg[msgNameIndex+1])
 		}
 
-		if len(raw) == int(entry.length) {
-			msgNameIndex := int(entry.ptr)
-			rawNameIndex := 0
+		labelLength := int(msg[msgNameIndex])
 
-			for {
-				if msg[msgNameIndex]&0xC0 == 0xC0 {
-					msgNameIndex = int(uint16(msg[msgNameIndex]^0xC0)<<8 | uint16(msg[msgNameIndex+1]))
-				}
-
-				labelLength := msg[msgNameIndex]
-
-				if labelLength != raw[rawNameIndex] {
-					break
-				}
-
-				if labelLength == 0 {
-					return entry.ptr
-				}
-
-				msgNameIndex++
-				rawNameIndex++
-
-				labelMsg := msg[msgNameIndex : msgNameIndex+int(labelLength)]
-				labelRaw := raw[rawNameIndex : rawNameIndex+int(labelLength)]
-				if !bytes.Equal(labelMsg, labelRaw) {
-					break
-				}
-
-				msgNameIndex += int(labelLength)
-				rawNameIndex += int(labelLength)
-			}
+		if labelLength != int(raw[rawNameIndex]) {
+			return false
 		}
+
+		if labelLength == 0 {
+			return true
+		}
+
+		msgNameIndex++
+		rawNameIndex++
+
+		if string(msg[msgNameIndex:msgNameIndex+labelLength]) != string(raw[rawNameIndex:rawNameIndex+labelLength]) {
+			return false
+		}
+
+		msgNameIndex += labelLength
+		rawNameIndex += labelLength
 	}
-	return 0
 }
