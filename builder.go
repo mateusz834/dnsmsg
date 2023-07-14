@@ -3,6 +3,7 @@ package dnsmsg
 import (
 	"bytes"
 	"errors"
+	"hash/maphash"
 	"math"
 )
 
@@ -452,6 +453,13 @@ func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	}
 }
 
+func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
+	nb := nameBuilderState{}
+	nb.reset()
+	*b = StartBuilder(buf, id, flags)
+	b.nb = nb
+}
+
 func (b *Builder) Bytes() []byte {
 	b.hdr.pack((*[12]byte)(b.buf[0:12]))
 	return b.buf
@@ -633,169 +641,193 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (head
 	return headerLengthFixup(len(b.buf)), nil
 }
 
+const (
+	ptrBits = 14
+	maxPtr  = (1 << ptrBits) - 1
+)
+
+type fingerprint uint32
+
+func takeFingerprint(hash uint64) fingerprint {
+	return fingerprint(hash >> (64 - (32 - ptrBits)))
+}
+
+// leading (32-ptrBits) bits are used as a fingerprint,
+// trailing ptrBits represents a DNS compression pointer.
+type entry uint32
+
+func (m entry) isFree() bool {
+	return m == 0
+}
+
+func (m entry) ptr() uint16 {
+	return uint16(m) & maxPtr
+}
+
+func (m entry) fingerprint() fingerprint {
+	return fingerprint(uint32(m) & ^uint32(maxPtr)) >> ptrBits
+}
+
+func (m *entry) fill(f fingerprint, ptr uint16) {
+	*m = entry(uint32(f)<<ptrBits | uint32(ptr))
+}
+
 type nameBuilderState struct {
-	compression map[string]uint16
-
-	// fastMap is used for small messages to avoid allocating the
-	// the compression map and string keys.
-	fastMap       [fastMapMaxLength]fastMapEntry
-	fastMapLength uint8
-
-	// This indicates the length of the first name in the entire message.
-	// It is assumed that the name it placed at msg[headerStartOffset+headerLen:].
-	// It used to speed up the builder, when the same name
-	// is constantly beeing appended.
+	entres          []entry
+	available       int
+	seed            maphash.Seed
 	firstNameLength uint8
 }
 
-const fastMapMaxLength = 8
-
-type fastMapEntry struct {
-	ptr    uint16
-	length uint8
+func (c *nameBuilderState) reset() {
+	for i := range c.entres {
+		c.entres[i] = 0
+	}
+	c.available = len(c.entres)
+	c.firstNameLength = 0
 }
 
-const maxPtr = 1<<14 - 1
-
-func (b *nameBuilderState) appendName(buf []byte, headerStartOffset int, name RawName, compress bool) []byte {
-	if b.firstNameLength == 0 {
-		b.firstNameLength = uint8(len(name))
-		return append(buf, name...)
+func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []byte, compress bool) []byte {
+	if m.firstNameLength == 0 {
+		m.firstNameLength = uint8(len(name))
+		return append(msg, name...)
 	}
 
-	isRootName := len(name) == 1
-	if isRootName {
-		return append(buf, 0)
+	if len(name) == 1 {
+		return append(msg, 0)
 	}
 
-	firstName := buf[headerStartOffset+headerLen:][:b.firstNameLength]
-
-	if !compress {
-		rawAsStr := ""
-
-	nextDnsLabel:
-		for i := 0; name[i] != 0; i += int(name[i]) + 1 {
-			findName := name[i:]
-			startOffset := len(firstName) - len(findName)
-
-			if startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName) {
-				break
-			}
-
-			for _, entry := range b.fastMap {
-				if entry.length == 0 {
-					break
-				}
-				if len(findName) == int(entry.length) && isCompressedNameEqual(buf, int(entry.ptr), 0, findName) {
-					break nextDnsLabel
-				}
-			}
-
-			if b.compression[string(findName)] != 0 {
-				break
-			}
-
-			newPtr := len(buf) + i
-			if newPtr <= maxPtr {
-				if b.fastMapLength < fastMapMaxLength {
-					b.fastMap[b.fastMapLength] = fastMapEntry{
-						length: uint8(len(findName)),
-						ptr:    uint16(newPtr),
-					}
-					b.fastMapLength++
-					continue
-				}
-
-				if rawAsStr == "" {
-					rawAsStr = string(name[:])
-					if b.compression == nil {
-						b.compression = make(map[string]uint16)
-					}
-				}
-				b.compression[rawAsStr[i:]] = uint16(newPtr)
-			}
-		}
-
-		return append(buf, name...)
+	firstName := msg[headerLen+headerStartOffset:][:m.firstNameLength]
+	if compress && bytes.Equal(firstName, name) {
+		return appendUint16(msg, headerLen|0xC000)
 	}
 
-	if bytes.Equal(firstName, name) {
-		return appendUint16(buf, 0xC000|headerLen)
-	}
-
-	rawStr := ""
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
-		findName := name[i:]
-
-		startOffset := len(firstName) - len(findName)
-		if startOffset >= 0 && bytes.Equal(firstName[startOffset:], findName) {
-			buf = append(buf, name[:i]...)
-			return appendUint16(buf, 0xC000|headerLen+uint16(startOffset))
+		startOffset := len(firstName) - len(name[i:])
+		if compress && startOffset >= 0 && bytes.Equal(firstName[startOffset:], name[i:]) {
+			msg = append(msg, name[:i]...)
+			return appendUint16(msg, 0xC000|(headerLen+uint16(startOffset)))
 		}
 
-		for _, entry := range b.fastMap {
-			if entry.ptr == 0 {
-				break
-			}
-			if len(findName) == int(entry.length) && isCompressedNameEqual(buf, int(entry.ptr), 0, findName) {
-				buf = append(buf, name[:i]...)
-				return appendUint16(buf, entry.ptr|0xC000)
-			}
+		if m.available == 0 {
+			m.grow(msg[headerStartOffset:], name)
 		}
 
-		ptr := b.compression[string(findName)]
-		if ptr != 0 {
-			buf = append(buf, name[:i]...)
-			return appendUint16(buf, ptr|0xC000)
-		}
+		var (
+			hash        = maphash.Bytes(m.seed, name[i:])
+			mask        = uint(len(m.entres) - 1)
+			fingerprint = takeFingerprint(hash)
+			idx         = uint(hash) & uint(mask)
+		)
 
-		newPtr := (len(buf) + i) - headerStartOffset
-		if newPtr <= maxPtr {
-			if b.fastMapLength < fastMapMaxLength {
-				b.fastMap[b.fastMapLength] = fastMapEntry{
-					length: uint8(len(findName)),
-					ptr:    uint16(newPtr),
-				}
-				b.fastMapLength++
+		for !m.entres[idx].isFree() {
+			if !compress {
+				idx = (idx + 1) & mask
 				continue
 			}
 
-			if rawStr == "" {
-				rawStr = string(name)
-				if b.compression == nil {
-					b.compression = make(map[string]uint16)
+			m := m.entres[idx]
+			if m.fingerprint() == fingerprint {
+				if int(m.ptr()) < len(msg) {
+					msgNameIndex := int(m.ptr())
+					rawNameIndex := i
+					for {
+						if msg[msgNameIndex]&0xC0 == 0xC0 {
+							msgNameIndex = int(msg[msgNameIndex]^0xC0)<<8 | int(msg[msgNameIndex+1])
+						}
+
+						labelLength := int(msg[msgNameIndex])
+
+						if labelLength != int(name[rawNameIndex]) {
+							break
+						}
+
+						if labelLength == 0 {
+							return appendUint16(append(msg, name[:i]...), m.ptr()|0xC000)
+						}
+
+						msgNameIndex++
+						rawNameIndex++
+
+						if !bytes.Equal(msg[msgNameIndex:msgNameIndex+labelLength], name[rawNameIndex:rawNameIndex+labelLength]) {
+							break
+						}
+
+						msgNameIndex += labelLength
+						rawNameIndex += labelLength
+					}
 				}
 			}
-			b.compression[rawStr[i:]] = uint16(newPtr)
+			idx = (idx + 1) & mask
+		}
+
+		newPtr := len(msg) + i
+		if newPtr <= maxPtr {
+			m.available--
+			m.entres[idx].fill(fingerprint, uint16(newPtr))
 		}
 	}
-	return append(buf, name...)
+	return append(msg, name...)
 }
 
-func isCompressedNameEqual(msg []byte, msgNameIndex, rawNameIndex int, raw RawName) bool {
-	for {
-		if msg[msgNameIndex]&0xC0 == 0xC0 {
-			msgNameIndex = int(msg[msgNameIndex]^0xC0)<<8 | int(msg[msgNameIndex+1])
-		}
-
-		labelLength := int(msg[msgNameIndex])
-
-		if labelLength != int(raw[rawNameIndex]) {
-			return false
-		}
-
-		if labelLength == 0 {
-			return true
-		}
-
-		msgNameIndex++
-		rawNameIndex++
-
-		if string(msg[msgNameIndex:msgNameIndex+labelLength]) != string(raw[rawNameIndex:rawNameIndex+labelLength]) {
-			return false
-		}
-
-		msgNameIndex += labelLength
-		rawNameIndex += labelLength
+func (m *nameBuilderState) grow(msg, name []byte) {
+	length := len(m.entres) * 2
+	if length == 0 {
+		length = 16
+		m.seed = maphash.MakeSeed()
 	}
+
+	newMap := *m
+	newMap.entres = make([]entry, length)
+	newMap.available = length
+
+	var h maphash.Hash
+	for _, m := range m.entres {
+		if m.isFree() {
+			continue
+		}
+
+		var (
+			offset = int(m.ptr())
+			hash   = uint64(0)
+		)
+
+		if offset >= len(msg) {
+			// Hash map is growing, but the current name hasn't been inserted to the message yet.
+			hash = maphash.Bytes(newMap.seed, name[offset-len(msg):])
+		} else {
+			h.SetSeed(newMap.seed)
+			for {
+				if msg[offset]&0xC0 == 0xC0 {
+					offset = int(msg[offset]^0xC0)<<8 | int(msg[offset+1])
+				}
+
+				labelLength := int(msg[offset])
+				if labelLength == 0 {
+					h.WriteByte(0)
+					hash = h.Sum64()
+					break
+				}
+
+				labelLength++
+				h.Write(msg[offset : offset+labelLength])
+				offset += labelLength
+			}
+		}
+
+		var (
+			fingerprint = takeFingerprint(hash)
+			mask        = uint64(len(newMap.entres) - 1)
+			idx         = hash & uint64(mask)
+		)
+
+		for !newMap.entres[idx].isFree() {
+			idx = (idx + 1) & mask
+		}
+
+		newMap.available--
+		newMap.entres[idx].fill(fingerprint, m.ptr())
+	}
+
+	*m = newMap
 }

@@ -211,17 +211,18 @@ func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
 func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 	buf := make([]byte, headerLen, 512)
 	b.ResetTimer()
+	nb := nameBuilderState{}
 	for i := 0; i < b.N; i++ {
 		buf := buf
-		b := nameBuilderState{}
-		buf = b.appendName(buf, 0, mustNewRawNameValid("com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("www.example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("dfd.www.example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
-		buf = b.appendName(buf, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
+		nb.reset()
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("www.example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("dfd.www.example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
+		buf = nb.appendName(buf, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
 	}
 }
 
@@ -237,12 +238,13 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable16Names(b *testing.B
 	}
 
 	buf := make([]byte, headerLen, 512)
+	builder := nameBuilderState{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		builder.reset()
 		buf := buf
-		b := nameBuilderState{}
 		for _, v := range names {
-			buf = b.appendName(buf, 0, mustNewRawNameValid(v), true)
+			buf = builder.appendName(buf, 0, mustNewRawNameValid(v), true)
 		}
 	}
 }
@@ -365,18 +367,12 @@ func testAppendCompressed(buf []byte, compression map[string]uint16, name RawNam
 		panic("invalid use of testAppendCompressed")
 	}
 
-	first := len(buf) == headerLen
-
 	// The nameBuilderState has an optimization (only for the first name),
 	// that as a side effect allows compressing not only on label length boundry.
 	defer func(bufStartLength int) {
-		offset := 0
-		if len(name) > 64 {
-			offset = len(name) - 64
-		}
-
+		first := len(buf) == headerLen
 		if first {
-			for i := offset; i < len(name)-1; i++ {
+			for i := 0; i < len(name)-1; i++ {
 				compression[string(name[i:])] = uint16(bufStartLength + i)
 			}
 		}
