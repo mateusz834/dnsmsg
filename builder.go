@@ -454,7 +454,7 @@ func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 }
 
 func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
-	nb := nameBuilderState{}
+	nb := b.nb
 	nb.reset()
 	*b = StartBuilder(buf, id, flags)
 	b.nb = nb
