@@ -673,17 +673,17 @@ func (m *entry) fill(f fingerprint, ptr uint16) {
 }
 
 type nameBuilderState struct {
-	entres          []entry
+	entries         []entry
 	available       int
 	seed            maphash.Seed
 	firstNameLength uint8
 }
 
 func (c *nameBuilderState) reset() {
-	for i := range c.entres {
-		c.entres[i] = 0
+	for i := range c.entries {
+		c.entries[i] = 0
 	}
-	c.available = len(c.entres)
+	c.available = len(c.entries)
 	c.firstNameLength = 0
 }
 
@@ -715,18 +715,18 @@ func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []
 
 		var (
 			hash        = maphash.Bytes(m.seed, name[i:])
-			mask        = uint(len(m.entres) - 1)
+			mask        = uint(len(m.entries) - 1)
 			fingerprint = takeFingerprint(hash)
 			idx         = uint(hash) & uint(mask)
 		)
 
-		for !m.entres[idx].isFree() {
+		for !m.entries[idx].isFree() {
 			if !compress {
 				idx = (idx + 1) & mask
 				continue
 			}
 
-			m := m.entres[idx]
+			m := m.entries[idx]
 			if m.fingerprint() == fingerprint {
 				if int(m.ptr()) < len(msg) {
 					msgNameIndex := int(m.ptr())
@@ -743,7 +743,8 @@ func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []
 						}
 
 						if labelLength == 0 {
-							return appendUint16(append(msg, name[:i]...), m.ptr()|0xC000)
+							msg = append(msg, name[:i]...)
+							return appendUint16(msg, m.ptr()|0xC000)
 						}
 
 						msgNameIndex++
@@ -764,25 +765,25 @@ func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []
 		newPtr := len(msg) + i
 		if newPtr <= maxPtr {
 			m.available--
-			m.entres[idx].fill(fingerprint, uint16(newPtr))
+			m.entries[idx].fill(fingerprint, uint16(newPtr))
 		}
 	}
 	return append(msg, name...)
 }
 
 func (m *nameBuilderState) grow(msg, name []byte) {
-	length := len(m.entres) * 2
+	length := len(m.entries) * 2
 	if length == 0 {
 		length = 16
 		m.seed = maphash.MakeSeed()
 	}
 
 	newMap := *m
-	newMap.entres = make([]entry, length)
+	newMap.entries = make([]entry, length)
 	newMap.available = length
 
 	var h maphash.Hash
-	for _, m := range m.entres {
+	for _, m := range m.entries {
 		if m.isFree() {
 			continue
 		}
@@ -817,16 +818,16 @@ func (m *nameBuilderState) grow(msg, name []byte) {
 
 		var (
 			fingerprint = takeFingerprint(hash)
-			mask        = uint64(len(newMap.entres) - 1)
+			mask        = uint64(len(newMap.entries) - 1)
 			idx         = hash & uint64(mask)
 		)
 
-		for !newMap.entres[idx].isFree() {
+		for !newMap.entries[idx].isFree() {
 			idx = (idx + 1) & mask
 		}
 
 		newMap.available--
-		newMap.entres[idx].fill(fingerprint, m.ptr())
+		newMap.entries[idx].fill(fingerprint, m.ptr())
 	}
 
 	*m = newMap
