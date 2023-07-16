@@ -291,14 +291,13 @@ func TestAppendName(t *testing.T) {
 				b := nameBuilderState{}
 				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("com."), true)
 				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
-				return buf
 				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
 			},
 			expect: append(
 				make([]byte, headerLen),
 				3, 'c', 'o', 'm', 0,
 				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0xC0, 12,
-				//3, 'w', 'w', 'w', 0xC0, 17,
+				3, 'w', 'w', 'w', 0xC0, 17,
 			),
 		},
 
