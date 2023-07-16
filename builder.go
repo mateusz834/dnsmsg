@@ -778,26 +778,26 @@ func (m *nameBuilderState) grow(msg, name []byte) {
 		m.seed = maphash.MakeSeed()
 	}
 
-	newMap := *m
-	newMap.entries = make([]entry, length)
-	newMap.available = length
+	oldEntries := m.entries
+	m.entries = make([]entry, length)
+	m.available = length
 
 	var h maphash.Hash
-	for _, m := range m.entries {
-		if m.isFree() {
+	for _, entry := range oldEntries {
+		if entry.isFree() {
 			continue
 		}
 
 		var (
-			offset = int(m.ptr())
+			offset = int(entry.ptr())
 			hash   = uint64(0)
 		)
 
 		if offset >= len(msg) {
 			// Hash map is growing, but the current name hasn't been inserted to the message yet.
-			hash = maphash.Bytes(newMap.seed, name[offset-len(msg):])
+			hash = maphash.Bytes(m.seed, name[offset-len(msg):])
 		} else {
-			h.SetSeed(newMap.seed)
+			h.SetSeed(m.seed)
 			for {
 				if msg[offset]&0xC0 == 0xC0 {
 					offset = int(msg[offset]^0xC0)<<8 | int(msg[offset+1])
@@ -818,17 +818,15 @@ func (m *nameBuilderState) grow(msg, name []byte) {
 
 		var (
 			fingerprint = takeFingerprint(hash)
-			mask        = uint64(len(newMap.entries) - 1)
+			mask        = uint64(len(m.entries) - 1)
 			idx         = hash & uint64(mask)
 		)
 
-		for !newMap.entries[idx].isFree() {
+		for !m.entries[idx].isFree() {
 			idx = (idx + 1) & mask
 		}
 
-		newMap.available--
-		newMap.entries[idx].fill(fingerprint, m.ptr())
+		m.available--
+		m.entries[idx].fill(fingerprint, entry.ptr())
 	}
-
-	*m = newMap
 }
