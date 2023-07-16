@@ -461,7 +461,7 @@ func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
 }
 
 func (b *Builder) Bytes() []byte {
-	b.hdr.pack((*[12]byte)(b.buf[0:12]))
+	b.hdr.pack((*[12]byte)(b.buf[b.headerStartOffset:]))
 	return b.buf
 }
 
