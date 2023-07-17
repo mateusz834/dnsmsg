@@ -423,3 +423,99 @@ func TestPtrLoopCount(t *testing.T) {
 		offset += int(n)
 	}
 }
+
+func FuzzParser(f *testing.F) {
+	b := StartBuilder(nil, 0, 0)
+	b.Question(Question[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  TypeA,
+		Class: ClassIN,
+	})
+	b.StartAnswers()
+	b.ResourceA(ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  TypeA,
+		Class: ClassIN,
+		TTL:   60,
+	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
+	f.Add(b.Bytes())
+
+	f.Fuzz(func(t *testing.T, msg []byte) {
+		p, hdr, err := Parse(msg)
+		if err != nil {
+			return
+		}
+
+		count := 0
+		for ; ; count++ {
+			_, err := p.Question()
+			if err != nil {
+				if err == errInvalidOperation {
+					t.Fatalf("unexpected %v error", errInvalidOperation)
+				}
+				if err == ErrSectionDone {
+					if count != int(hdr.QDCount) {
+						t.Errorf("unexpected amount of questions, got: %v, expected: %v", count, hdr.QDCount)
+					}
+					break
+				}
+				return
+			}
+		}
+
+		expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
+		for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+			if err := nextSection(); err != nil {
+				t.Fatalf("failed while changing parsing section: %v", err)
+			}
+
+			count := 0
+			for ; ; count++ {
+				hdr, err := p.ResourceHeader()
+				if err != nil {
+					if err == errInvalidOperation {
+						t.Fatalf("unexpected %v error", errInvalidOperation)
+					}
+					if err == ErrSectionDone {
+						if count != int(expectCounts[i]) {
+							t.Errorf("unexpected amount of resources, got: %v, expected: %v", count, expectCounts[i])
+						}
+						break
+					}
+					return
+				}
+
+				switch hdr.Type {
+				case TypeA:
+					_, err = p.ResourceA()
+				case TypeAAAA:
+					_, err = p.ResourceAAAA()
+				case TypeCNAME:
+					_, err = p.ResourceCNAME()
+				case TypeMX:
+					_, err = p.ResourceMX()
+				case TypeTXT:
+					var txt RawResourceTXT
+					txt, err = p.RawResourceTXT()
+					txt.ToResourceTXT()
+				default:
+					err = p.SkipResourceData()
+				}
+
+				if err != nil {
+					if err == errInvalidOperation {
+						t.Fatalf("unexpected %v error", errInvalidOperation)
+					}
+					return
+				}
+			}
+		}
+
+		if err := p.End(); err != nil {
+			if err == errInvalidOperation {
+				t.Fatalf("unexpected %v error", errInvalidOperation)
+			}
+			return
+		}
+	})
+}
