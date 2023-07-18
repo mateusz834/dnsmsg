@@ -592,7 +592,7 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 		if len(str) > math.MaxUint8 {
 			return errTooLongTXTString
 		}
-		totalLength += len(str)
+		totalLength += 1 + len(str)
 		if totalLength > math.MaxUint16 {
 			return errTooLongTXT
 		}

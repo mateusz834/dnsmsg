@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -425,4 +426,220 @@ func FuzzAppendName(f *testing.F) {
 			t.Fatalf("failed while appending names: %#v\n\tgot:      %v\n\texpected: %v", names, got, expect)
 		}
 	})
+}
+
+func TestBuilder(t *testing.T) {
+	id := uint16(34581)
+	var f Flags
+	f.SetRCode(RCodeSuccess)
+	f.SetOpCode(OpCodeQuery)
+	f.SetBit(BitRD, true)
+	f.SetBit(BitRA, true)
+	f.SetBit(BitAD, true)
+	f.SetResponse()
+
+	startLength := 128
+	b := StartBuilder(make([]byte, startLength, 1024), id, f)
+	err := b.Question(Question[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  TypeA,
+		Class: ClassIN,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rhdr := ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Class: ClassIN,
+		TTL:   60,
+	}
+
+	var (
+		resourceA    = ResourceA{A: [4]byte{192, 0, 2, 1}}
+		resourceAAAA = ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()}
+		resourceTXT  = ResourceTXT{
+			TXT: [][]byte{
+				bytes.Repeat([]byte("a"), 209),
+				bytes.Repeat([]byte("b"), 105),
+				bytes.Repeat([]byte("z"), 123),
+			},
+		}
+		rawResourceTXT = RawResourceTXT{
+			TXT: func() []byte {
+				var raw []byte
+				for _, str := range resourceTXT.TXT {
+					raw = append(raw, uint8(len(str)))
+					raw = append(raw, str...)
+				}
+				return raw
+			}(),
+		}
+		resourceCNAME = ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")}
+		resourceMX    = ResourceMX[RawName]{Pref: 54831, MX: MustNewRawName("smtp.example.com")}
+	)
+
+	for _, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
+		nextSection()
+
+		rhdr.Type = TypeA
+		if err := b.ResourceA(rhdr, resourceA); err != nil {
+			t.Fatal(err)
+		}
+
+		rhdr.Type = TypeAAAA
+		if err := b.ResourceAAAA(rhdr, resourceAAAA); err != nil {
+			t.Fatal(err)
+		}
+
+		rhdr.Type = TypeTXT
+		if err := b.ResourceTXT(rhdr, resourceTXT); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.RawResourceTXT(rhdr, rawResourceTXT); err != nil {
+			t.Fatal(err)
+		}
+
+		rhdr.Type = TypeCNAME
+		if err := b.ResourceCNAME(rhdr, resourceCNAME); err != nil {
+			t.Fatal(err)
+		}
+
+		rhdr.Type = TypeMX
+		if err := b.ResourceMX(rhdr, resourceMX); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	msg := b.Bytes()
+
+	if !bytes.Equal(msg[:startLength], make([]byte, startLength)) {
+		t.Fatal("builder modified msg[:startLength]")
+	}
+
+	p, hdr, err := Parse(msg[startLength:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectHeader := Header{
+		ID:      id,
+		Flags:   f,
+		QDCount: 1,
+		ANCount: 6,
+		NSCount: 6,
+		ARCount: 6,
+	}
+
+	if hdr != expectHeader {
+		t.Errorf("expected header: %v; got %v", expectHeader, hdr)
+	}
+
+	q, err := p.Question()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !q.Name.EqualName(MustNewName("example.com")) {
+		t.Fatal("question name is not equal to example.com")
+	}
+
+	if q.Type != TypeA {
+		t.Fatalf("unexpected type in question: %v", q.Type)
+	}
+
+	if q.Class != ClassIN {
+		t.Fatalf("unexpected class in question: %v", q.Class)
+	}
+
+	parseResourceHeader := func(qType Type) {
+		rhdr, err := p.ResourceHeader()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !rhdr.Name.Equal(&q.Name) {
+			t.Fatal("resource header name is not equal to name found in question")
+		}
+
+		if !rhdr.Name.EqualName(MustNewName("example.com")) {
+			t.Fatal("resource header name is not equal to example.com")
+		}
+
+		if rhdr.Type != qType {
+			t.Fatalf("unexpected type in resource header: %v, expected: %v", rhdr.Type, qType)
+		}
+
+		if rhdr.Class != ClassIN {
+			t.Fatalf("unexpected class in resource header: %v", rhdr.Class)
+		}
+
+		if rhdr.TTL != 60 {
+			t.Fatalf("unexpected ttl in resource header: %v", rhdr.TTL)
+		}
+	}
+
+	for _, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+		if err := nextSection(); err != nil {
+			t.Fatal(err)
+		}
+
+		parseResourceHeader(TypeA)
+		resA, err := p.ResourceA()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resA != resourceA {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resA, resourceA)
+		}
+
+		parseResourceHeader(TypeAAAA)
+		resAAAA, err := p.ResourceAAAA()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resAAAA != resourceAAAA {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resAAAA, resourceAAAA)
+		}
+
+		parseResourceHeader(TypeTXT)
+		resRawTXT, err := p.RawResourceTXT()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(resRawTXT.TXT, rawResourceTXT.TXT) {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resRawTXT, rawResourceTXT)
+		}
+
+		parseResourceHeader(TypeTXT)
+		resTXT, err := p.RawResourceTXT()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(resTXT.TXT, rawResourceTXT.TXT) {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resTXT, resourceTXT)
+		}
+
+		parseResourceHeader(TypeCNAME)
+		resCNAME, err := p.ResourceCNAME()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !resCNAME.CNAME.EqualName(MustNewName("www.example.com")) {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resCNAME, resourceCNAME)
+		}
+
+		parseResourceHeader(TypeMX)
+		resMX, err := p.ResourceMX()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resMX.Pref != resourceMX.Pref || !resMX.MX.EqualName(MustNewName("smtp.example.com")) {
+			t.Fatalf("invalid resource, got %#v, expected %#v", resMX, resourceMX)
+		}
+	}
+
+	if err := p.End(); err != nil {
+		t.Fatal(err)
+	}
 }
