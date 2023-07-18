@@ -540,9 +540,9 @@ func FuzzParser(f *testing.F) {
 		Class: ClassIN,
 		TTL:   60,
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
-	f.Add(b.Bytes(), false, false, false, false)
+	f.Add(b.Bytes(), false, false, false, false, 100)
 
-	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool) {
+	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool, skipRData int) {
 		p, hdr, err := Parse(msg)
 		if err != nil {
 			return
@@ -614,21 +614,26 @@ func FuzzParser(f *testing.F) {
 					return
 				}
 
-				switch hdr.Type {
-				case TypeA:
-					_, err = p.ResourceA()
-				case TypeAAAA:
-					_, err = p.ResourceAAAA()
-				case TypeCNAME:
-					_, err = p.ResourceCNAME()
-				case TypeMX:
-					_, err = p.ResourceMX()
-				case TypeTXT:
-					var txt RawResourceTXT
-					txt, err = p.RawResourceTXT()
-					txt.ToResourceTXT()
-				default:
+				if count == skipRData {
+					skipRData += skipRData / 2
 					err = p.SkipResourceData()
+				} else {
+					switch hdr.Type {
+					case TypeA:
+						_, err = p.ResourceA()
+					case TypeAAAA:
+						_, err = p.ResourceAAAA()
+					case TypeCNAME:
+						_, err = p.ResourceCNAME()
+					case TypeMX:
+						_, err = p.ResourceMX()
+					case TypeTXT:
+						var txt RawResourceTXT
+						txt, err = p.RawResourceTXT()
+						txt.ToResourceTXT()
+					default:
+						err = p.SkipResourceData()
+					}
 				}
 
 				if err != nil {
