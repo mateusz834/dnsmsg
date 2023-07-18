@@ -540,12 +540,23 @@ func FuzzParser(f *testing.F) {
 		Class: ClassIN,
 		TTL:   60,
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
-	f.Add(b.Bytes())
+	f.Add(b.Bytes(), false, false, false, false)
 
-	f.Fuzz(func(t *testing.T, msg []byte) {
+	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool) {
 		p, hdr, err := Parse(msg)
 		if err != nil {
 			return
+		}
+
+		if skipQuestions {
+			err := p.SkipQuestions()
+			if err != nil {
+				if err == errInvalidOperation {
+					t.Fatalf("unexpected %v error", errInvalidOperation)
+				}
+				return
+			}
+			hdr.QDCount = 0
 		}
 
 		for count := 0; ; count++ {
@@ -558,16 +569,31 @@ func FuzzParser(f *testing.F) {
 					if count != int(hdr.QDCount) {
 						t.Errorf("unexpected amount of questions, got: %v, expected: %v", count, hdr.QDCount)
 					}
+					if _, err := p.Question(); err != ErrSectionDone {
+						t.Fatalf("unexpected error: %v, expected: %v", err, ErrSectionDone)
+					}
 					break
 				}
 				return
 			}
 		}
 
+		skipAll := []bool{skipAnswers, skipAuthorities, skipAddtionals}
 		expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
 		for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
 			if err := nextSection(); err != nil {
 				t.Fatalf("failed while changing parsing section: %v", err)
+			}
+
+			if skipAll[i] {
+				err := p.SkipResources()
+				if err != nil {
+					if err == errInvalidOperation {
+						t.Fatalf("unexpected %v error", errInvalidOperation)
+					}
+					return
+				}
+				expectCounts[i] = 0
 			}
 
 			for count := 0; ; count++ {
@@ -579,6 +605,9 @@ func FuzzParser(f *testing.F) {
 					if err == ErrSectionDone {
 						if count != int(expectCounts[i]) {
 							t.Errorf("unexpected amount of resources, got: %v, expected: %v", count, expectCounts[i])
+						}
+						if _, err := p.ResourceHeader(); err != ErrSectionDone {
+							t.Fatalf("unexpected error: %v, expected: %v", err, ErrSectionDone)
 						}
 						break
 					}
