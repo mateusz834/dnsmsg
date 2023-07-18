@@ -3,6 +3,7 @@ package dnsmsg
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -222,169 +223,164 @@ func TestUnpackNameCompressionPtrLoop(t *testing.T) {
 
 }
 
-func prepNameSameMsg(buf []byte, n1Start, n2Start int) [2]ParserName {
-	msg := Parser{msg: buf}
-
-	m1 := ParserName{m: &msg, nameStart: n1Start}
-	_, err := m1.unpack()
-	if err != nil {
-		panic(err)
+func TestParserNameEqual(t *testing.T) {
+	prepNamesSameMsg := func(t *testing.T, buf []byte, n1Start, n2Start int) [2]ParserName {
+		msg := Parser{msg: buf}
+		m1, _, err := msg.unpackName(n1Start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m2, _, err := msg.unpackName(n2Start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ret := [2]ParserName{m1, m2}
+		return ret
 	}
 
-	m2 := ParserName{m: &msg, nameStart: n2Start}
-	_, err = m2.unpack()
-	if err != nil {
-		panic(err)
+	prepNamesDifferentMsg := func(t *testing.T, buf1, buf2 []byte, n1Start, n2Start int) [2]ParserName {
+		msg1, msg2 := Parser{msg: buf1}, Parser{msg: buf2}
+		m1, _, err := msg1.unpackName(n1Start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m2, _, err := msg2.unpackName(n2Start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ret := [2]ParserName{m1, m2}
+		return ret
 	}
 
-	var n [2]ParserName
-	n[0] = m1
-	n[1] = m2
-	return n
-}
+	var tests = []struct {
+		name string
 
-func prepNameDifferentMsg(buf1, buf2 []byte, n1Start, n2Start int) [2]ParserName {
-	msg1, msg2 := Parser{msg: buf1}, Parser{msg: buf2}
+		names [2]ParserName
+		equal bool
+	}{
+		{
+			name: "(same msg) same nameStart",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 0),
+			equal: true,
+		},
 
-	m1 := ParserName{m: &msg1, nameStart: n1Start}
-	_, err := m1.unpack()
-	if err != nil {
-		panic(err)
+		{
+			name: "(same msg) second name directly points to first name",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				0xC0, 0,
+			}, 0, 13),
+			equal: true,
+		},
+
+		{
+			name: "(same msg) two separate names, without compression pointers",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 13),
+			equal: true,
+		},
+
+		{
+			name: "(same msg) two separate names without compression pointers with different letter case",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'E', 'x', 'A', 'm', 'P', 'l', 'e', 3, 'c', 'O', 'M', 0,
+				7, 'E', 'X', 'a', 'm', 'P', 'l', 'E', 3, 'c', 'o', 'm', 0,
+			}, 0, 13),
+			equal: true,
+		},
+
+		{
+			name: "(same msg) two different names example.com != www.example.com, no pointers",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 13),
+			equal: false,
+		},
+
+		{
+			name: "(same msg) two different names ttt.example.com != www.example.com, no pointers",
+			names: prepNamesSameMsg(t, []byte{
+				3, 't', 't', 't', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 17),
+			equal: false,
+		},
+
+		{
+			name: "(same msg) two different names example.com != www.example.com, with pointers",
+			names: prepNamesSameMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 0xC0, 0,
+			}, 0, 13),
+			equal: false,
+		},
+
+		{
+			name: "(same msg) two different names example.com == example.com, with multiple pointers",
+			names: prepNamesSameMsg(t, []byte{
+				0xC0, 3, 99, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				0xC0, 0,
+			}, 0, 16),
+			equal: true,
+		},
+
+		{
+			name: "(different msgs) same name, no pointers",
+			names: prepNamesDifferentMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 0),
+			equal: true,
+		},
+
+		{
+			name: "(different msgs) same names, different letter case, no pointers",
+			names: prepNamesDifferentMsg(t, []byte{
+				7, 'E', 'x', 'a', 'M', 'P', 'l', 'e', 3, 'c', 'O', 'm', 0,
+			}, []byte{
+				7, 'E', 'X', 'a', 'm', 'P', 'l', 'E', 3, 'c', 'o', 'm', 0,
+			}, 0, 0),
+			equal: true,
+		},
+
+		{
+			name: "(different msgs) different names, no pointers",
+			names: prepNamesDifferentMsg(t, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, []byte{
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, 0, 0),
+			equal: false,
+		},
+
+		{
+			name: "(different msgs) same names, with pointers",
+			names: prepNamesDifferentMsg(t, []byte{
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, []byte{
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 3, 'w', 'w', 'w', 0xC0, 0,
+			}, 0, 13),
+			equal: true,
+		},
+
+		{
+			name: "(different msgs) different names, with pointers",
+			names: prepNamesDifferentMsg(t, []byte{
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			}, []byte{
+				3, 't', 't', 't', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 3, 'w', 'w', 'w', 0xC0, 0,
+			}, 0, 17),
+			equal: false,
+		},
 	}
 
-	m2 := ParserName{m: &msg2, nameStart: n2Start}
-	_, err = m2.unpack()
-	if err != nil {
-		panic(err)
-	}
-
-	var n [2]ParserName
-	n[0] = m1
-	n[1] = m2
-	return n
-}
-
-var nameEqualTests = []struct {
-	name string
-
-	names [2]ParserName
-	equal bool
-}{
-	{
-		name: "(same msg) same nameStart",
-		names: prepNameSameMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 0),
-		equal: true,
-	},
-
-	{
-		name: "(same msg) second name directly points to first name",
-		names: prepNameSameMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-			0xC0, 0,
-		}, 0, 8),
-		equal: true,
-	},
-
-	{
-		name: "(same msg) two separate names, without compression pointers",
-		names: prepNameSameMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 8),
-		equal: true,
-	},
-
-	{
-		name: "(same msg) two separate names without compression pointers with different letter case",
-		names: prepNameSameMsg([]byte{
-			2, 'G', 'o', 3, 'd', 'E', 'V', 0,
-			2, 'g', 'O', 3, 'D', 'e', 'V', 0,
-		}, 0, 8),
-		equal: true,
-	},
-
-	{
-		name: "(same msg) two different names go.dev www.go.dev, no pointers",
-		names: prepNameSameMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-			3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 8),
-		equal: false,
-	},
-
-	{
-		name: "(same msg) two different names go.dev go.go.dev, no pointers",
-		names: prepNameSameMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'b', 0,
-			2, 'g', 'o', 2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 8),
-		equal: false,
-	},
-
-	{
-		name: "(same msg) two different names go.dev www.go.dev with pointers",
-		names: prepNameSameMsg([]byte{
-			2, 'G', 'o', 3, 'd', 'R', 'V', 0,
-			3, 'w', 'w', 'w', 0xC0, 0,
-		}, 0, 8),
-		equal: false,
-	},
-
-	{
-		name: "(different msgs) same name no pointers",
-		names: prepNameDifferentMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, []byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 0),
-		equal: true,
-	},
-
-	{
-		name: "(different msgs) same names, different letter case, no pointers",
-		names: prepNameDifferentMsg([]byte{
-			2, 'G', 'o', 3, 'd', 'E', 'V', 0,
-		}, []byte{
-			2, 'G', 'O', 3, 'D', 'e', 'v', 0,
-		}, 0, 0),
-		equal: true,
-	},
-
-	{
-		name: "(different msgs) different names, no pointers",
-		names: prepNameDifferentMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, []byte{
-			2, 'g', 'o', 2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, 0, 0),
-		equal: false,
-	},
-
-	{
-		name: "(different msgs) same name with pointers",
-		names: prepNameDifferentMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, []byte{
-			3, 'd', 'e', 'v', 0, 2, 'g', 'o', 0xC0, 0,
-		}, 0, 5),
-		equal: true,
-	},
-
-	{
-		name: "(different msgs) different names with pointers",
-		names: prepNameDifferentMsg([]byte{
-			2, 'g', 'o', 3, 'd', 'e', 'v', 0,
-		}, []byte{
-			3, 'd', 'e', 'v', 0, 2, 'g', 'o', 2, 'g', 'o', 0xC0, 0,
-		}, 0, 5),
-		equal: false,
-	},
-}
-
-func TestNameEqual(t *testing.T) {
-	for i, v := range nameEqualTests {
+	for i, v := range tests {
 		for ti, tv := range []string{"n[0].Equal(n[1])", "n[1].Equal(n[0])"} {
 			prefix := fmt.Sprintf("%v: %v: %v:", i, v.name, tv)
 
@@ -400,44 +396,133 @@ func TestNameEqual(t *testing.T) {
 	}
 }
 
-func newParserName(buf []byte) ParserName {
-	msg := Parser{msg: buf}
-	m := ParserName{m: &msg, nameStart: 0}
-	_, err := m.unpack()
-	if err != nil {
-		panic(err)
-	}
-	return m
-}
-
-func TestSearchNameEqual(t *testing.T) {
-	n, err := NewSearchName(MustNewName("www"), MustNewName("go.dev"))
-	if err != nil {
-		t.Fatal(err)
+func TestParserNameEqualToStringName(t *testing.T) {
+	newParserName := func(t *testing.T, buf []byte, offset int) ParserName {
+		msg := Parser{msg: buf}
+		m, _, err := msg.unpackName(offset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
 	}
 
-	n2, err := NewSearchName(Name{}, MustNewName("www.go.dev"))
-	if err != nil {
-		t.Fatal(err)
+	newSearchName := func(t *testing.T, n, n2 Name) SearchName {
+		s, err := NewSearchName(n, n2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
 	}
 
-	m := newParserName([]byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0})
-
-	if !m.EqualSearchName(n) {
-		t.Fatal("names are not equal")
+	tests := []struct {
+		parserName  ParserName
+		name        Name
+		searchNames []SearchName
+		equal       bool
+	}{
+		{
+			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("example.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com"))},
+			equal:       true,
+		},
+		{
+			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("example.com."),
+			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com."))},
+			equal:       true,
+		},
+		{
+			parserName: newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:       MustNewName("www.example.com"),
+			searchNames: []SearchName{
+				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
+				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
+			},
+			equal: false,
+		},
+		{
+			parserName:  newParserName(t, []byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("example.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com"))},
+			equal:       false,
+		},
+		{
+			parserName:  newParserName(t, []byte{7, 'E', 'X', 'A', 'M', 'p', 'l', 'E', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("eXAmPle.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("eXAmPle"), MustNewName("com"))},
+			equal:       true,
+		},
+		{
+			parserName: newParserName(t, []byte{7, 'E', 'X', 'A', 'M', 'p', 'l', 'E', 3, 'c', 'o', 'm', 0}, 0),
+			name:       MustNewName("eXAmPle.com."),
+			searchNames: []SearchName{
+				newSearchName(t, Name{}, MustNewName("eXAmPle.com")),
+				newSearchName(t, MustNewName("eXAmPle"), MustNewName("com")),
+			},
+			equal: true,
+		},
+		{
+			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("\\exam\\ple.c\\om"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("\\exam\\ple"), MustNewName("c\\om"))},
+			equal:       true,
+		},
+		{
+			parserName:  newParserName(t, []byte{3, 33, 99, 'z', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("\\033\\099\\" + strconv.Itoa('z') + ".example.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("\\033\\099\\"+strconv.Itoa('z')), MustNewName("example.com"))},
+			equal:       true,
+		},
+		{
+			parserName:  newParserName(t, []byte{3, 0x33, 0x99, 'z', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("\x33\x99\\z.example.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("\x33\x99\\"+strconv.Itoa('z')), MustNewName("example.com"))},
+			equal:       true,
+		},
+		{
+			parserName:  newParserName(t, []byte{3, 'w', 'w', '.', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:        MustNewName("ww\\..example.com"),
+			searchNames: []SearchName{newSearchName(t, MustNewName("ww\\."), MustNewName("example.com"))},
+			equal:       true,
+		},
+		{
+			parserName: newParserName(t, []byte{3, 'w', 'w', '.', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
+			name:       MustNewName("ww\\.example.com"),
+			equal:      false,
+		},
+		{
+			parserName: newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 2, 3, 'w', 'w', 'w', 0xC0, 0}, 14),
+			name:       MustNewName("www.example.com"),
+			searchNames: []SearchName{
+				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
+				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
+			},
+			equal: true,
+		},
+		{
+			parserName: newParserName(t, []byte{0xC0, 3, 9, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 2, 3, 'w', 'w', 'w', 0xC0, 0}, 17),
+			name:       MustNewName("www.example.com"),
+			searchNames: []SearchName{
+				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
+				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
+			},
+			equal: true,
+		},
 	}
 
-	if m.nameStart != 0 {
-		t.Fatal("nameStart has changed")
-	}
+	for _, v := range tests {
+		eq := v.parserName.EqualName(v.name)
+		if eq != v.equal {
+			t.Errorf("ParserName(%#v) == Name(%#v) = %v", v.parserName.String(), v.name.String(), eq)
+		}
 
-	if !m.EqualSearchName(n2) {
-		t.Fatal("names are not equal")
-	}
-
-	m = newParserName([]byte{3, 'w', 'w', 'w', 0})
-	if m.EqualSearchName(n) {
-		t.Fatal("names are equal")
+		for _, vv := range append(v.searchNames, newSearchName(t, Name{}, v.name)) {
+			eq := v.parserName.EqualSearchName(vv)
+			if eq != v.equal {
+				t.Errorf("ParserName(%#v) == %#v = %v", v.parserName.String(), vv, eq)
+			}
+		}
 	}
 }
 

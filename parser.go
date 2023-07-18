@@ -582,7 +582,7 @@ func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 // EqualSearchName reports whether m and m2 represents the same name.
 func (m *ParserName) EqualSearchName(m2 SearchName) bool {
 	c := *m
-	return c.equalName(m2.name, true) && c.equalName(m2.suffix, false)
+	return c.equalName(m2.prefix, true) && c.equalName(m2.suffix, false)
 }
 
 // len(a) must be caseInsensitiveEqual to len(b)

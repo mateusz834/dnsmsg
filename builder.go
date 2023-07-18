@@ -360,7 +360,7 @@ func (s *SearchNameIterator) Next() (SearchName, bool) {
 // string concatenations.
 // Zero value of this type shouldn't be used.
 type SearchName struct {
-	name   Name
+	prefix Name
 	suffix Name
 }
 
@@ -369,31 +369,31 @@ func (s SearchName) AsRawName() RawName {
 }
 
 // NewSearchName creates a new SearchName.
-// name might be a zero value, then the suffix is
-// treated as the entire name, name cannot be a rooted name.
-func NewSearchName(name, suffix Name) (SearchName, error) {
-	if !isZero(name) && name.IsRooted() {
+// prefix might be a zero value, then the suffix is
+// treated as the entire name, prefix cannot be a rooted name.
+func NewSearchName(prefix, suffix Name) (SearchName, error) {
+	if !isZero(prefix) && prefix.IsRooted() {
 		return SearchName{}, errInvalidName
 	}
-	nameLength := name.charCount() + suffix.charCount()
+	nameLength := prefix.charCount() + suffix.charCount()
 	if nameLength > 254 || nameLength == 254 && !suffix.IsRooted() {
 		return SearchName{}, errInvalidName
 	}
-	return SearchName{name, suffix}, nil
+	return SearchName{prefix, suffix}, nil
 }
 
 func (n SearchName) String() string {
 	if isZero(n) {
 		return ""
 	}
-	if isZero(n.name) {
+	if isZero(n.prefix) {
 		return n.suffix.String()
 	}
-	return n.name.String() + "." + n.suffix.String()
+	return n.prefix.String() + "." + n.suffix.String()
 }
 
 func appendSearchName(buf []byte, name SearchName) []byte {
-	return appendEscapedName(appendEscapedName(buf, false, name.name.n), true, name.suffix.n)
+	return appendEscapedName(appendEscapedName(buf, false, name.prefix.n), true, name.suffix.n)
 }
 
 type RawName []byte
