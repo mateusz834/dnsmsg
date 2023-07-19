@@ -370,8 +370,7 @@ func testAppendCompressed(buf []byte, compression map[string]uint16, name RawNam
 	// The nameBuilderState has an optimization (only for the first name),
 	// that as a side effect allows compressing not only on label length boundry.
 	defer func(bufStartLength int) {
-		first := len(buf) == headerLen
-		if first {
+		if bufStartLength == headerLen {
 			for i := 0; i < len(name)-1; i++ {
 				compression[string(name[i:])] = uint16(bufStartLength + i)
 			}
