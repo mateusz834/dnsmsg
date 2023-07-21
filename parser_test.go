@@ -2,7 +2,9 @@ package dnsmsg
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"testing"
 )
@@ -220,7 +222,6 @@ func TestUnpackNameCompressionPtrLoop(t *testing.T) {
 	if err != errPtrLoop {
 		t.Fatalf("unexpected error while unpacking badly packed name (ptr to ptr): %v, expected: %v", err, errPtrLoop)
 	}
-
 }
 
 func TestParserNameEqual(t *testing.T) {
@@ -521,6 +522,295 @@ func TestParserNameEqualToStringName(t *testing.T) {
 			eq := v.parserName.EqualSearchName(vv)
 			if eq != v.equal {
 				t.Errorf("ParserName(%#v) == %#v = %v", v.parserName.String(), vv, eq)
+			}
+		}
+	}
+}
+
+func TestParse(t *testing.T) {
+	expect := Header{
+		ID:      43127,
+		Flags:   Flags(12930),
+		QDCount: 49840,
+		ANCount: 55119,
+		NSCount: 33990,
+		ARCount: 62101,
+	}
+
+	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), expect.ID)
+	raw = binary.BigEndian.AppendUint16(raw, uint16(expect.Flags))
+	raw = binary.BigEndian.AppendUint16(raw, expect.QDCount)
+	raw = binary.BigEndian.AppendUint16(raw, expect.ANCount)
+	raw = binary.BigEndian.AppendUint16(raw, expect.NSCount)
+	raw = binary.BigEndian.AppendUint16(raw, expect.ARCount)
+
+	p, hdr, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hdr != expect {
+		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+	}
+
+	_, err = p.Question()
+	if err != errInvalidDNSName {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_, _, err = Parse(raw[:11])
+	if err == nil {
+		t.Fatal("unexpected success while parsing too short dns message")
+	}
+}
+
+func TestParseQuestion(t *testing.T) {
+	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 2)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+
+	raw = append(raw, []byte{3, 'w', 'w', 'w', 0xC0, 12}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+
+	p, hdr, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expect := Header{QDCount: 2}
+	if hdr != expect {
+		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+	}
+
+	q1, err := p.Question()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !q1.Name.EqualName(MustNewName("example.com")) {
+		t.Errorf("name from question is not equal to example.com")
+	}
+
+	if q1.Type != TypeA {
+		t.Errorf("type is not equal to TypeA")
+	}
+
+	if q1.Class != ClassIN {
+		t.Errorf("class is not equal to ClassIN")
+	}
+
+	q2, err := p.Question()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !q2.Name.EqualName(MustNewName("www.example.com")) {
+		t.Errorf("name from question is not equal to www.example.com")
+	}
+
+	if q2.Type != TypeA {
+		t.Errorf("type is not equal to TypeA")
+	}
+
+	if q2.Class != ClassIN {
+		t.Errorf("class is not equal to ClassIN")
+	}
+
+	_, err = p.Question()
+	if err != ErrSectionDone {
+		t.Fatalf("unexpected error after parsing all questions: %v, expected: %v", err, ErrSectionDone)
+	}
+
+	if err := p.End(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = p.SkipQuestions()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParserInvalidOperation(t *testing.T) {
+	b := StartBuilder(make([]byte, 0, 512), 0, 0)
+
+	b.Question(Question[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  TypeA,
+		Class: ClassIN,
+	})
+
+	for _, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
+		nextSection()
+		hdr := ResourceHeader[RawName]{
+			Name:  MustNewRawName("example.com"),
+			Class: ClassIN,
+			TTL:   60,
+		}
+		hdr.Type = TypeA
+		b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}})
+		hdr.Type = TypeAAAA
+		b.ResourceAAAA(hdr, ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()})
+		hdr.Type = TypeTXT
+		b.ResourceTXT(hdr, ResourceTXT{TXT: [][]byte{[]byte("test"), []byte("test2")}})
+		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
+		hdr.Type = TypeCNAME
+		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
+		hdr.Type = TypeMX
+		b.ResourceMX(hdr, ResourceMX[RawName]{Pref: 100, MX: MustNewRawName("smtp.example.com")})
+	}
+
+	p, hdr, err := Parse(b.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeTXT, TypeCNAME, TypeMX}
+	parseResource := func(p *Parser, resType Type) error {
+		switch resType {
+		case TypeA:
+			_, err = p.ResourceA()
+		case TypeAAAA:
+			_, err = p.ResourceAAAA()
+		case TypeTXT:
+			_, err = p.RawResourceTXT()
+		case TypeCNAME:
+			_, err = p.ResourceCNAME()
+		case TypeMX:
+			_, err = p.ResourceMX()
+		default:
+			panic("unknown resource")
+		}
+		return err
+	}
+
+	if err := p.SkipResources(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while skipping all resources: %v, want %v", err, errInvalidOperation)
+	}
+
+	if err := p.SkipResourceData(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+	}
+
+	for _, tt := range knownResourceTypes {
+		if err := parseResource(&p, tt); err != errInvalidOperation {
+			t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+		}
+	}
+
+	for _, next := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+		if err := next(); err != errInvalidOperation {
+			t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+		}
+	}
+
+	_, err = p.Question()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipResources(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while skipping all resources: %v, want %v", err, errInvalidOperation)
+	}
+
+	if err := p.SkipResourceData(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+	}
+
+	for _, tt := range knownResourceTypes {
+		if err := parseResource(&p, tt); err != errInvalidOperation {
+			t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+		}
+	}
+
+	for _, next := range []func() error{p.StartAuthorities, p.StartAdditionals} {
+		if err := next(); err != errInvalidOperation {
+			t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+		}
+	}
+
+	expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
+	changeSections := []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals}
+	for curSection, nextSection := range changeSections {
+		if err := nextSection(); err != nil {
+			t.Fatal(err)
+		}
+
+		for count := expectCounts[curSection]; ; count-- {
+			if _, err := p.Question(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while trying to parse question: %v, want %v", err, errInvalidOperation)
+			}
+
+			if err := p.SkipQuestions(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while trying to skip all questions: %v, want %v", err, errInvalidOperation)
+			}
+
+			invalidChangeSection := changeSections
+			if count == 0 {
+				switch curSection {
+				case 0:
+					invalidChangeSection = []func() error{p.StartAnswers, p.StartAdditionals}
+				case 1:
+					invalidChangeSection = []func() error{p.StartAnswers, p.StartAuthorities}
+				}
+			}
+
+			for _, next := range invalidChangeSection {
+				if err := next(); err != errInvalidOperation {
+					t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+				}
+			}
+
+			if err := p.SkipResourceData(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+			}
+
+			for _, tt := range knownResourceTypes {
+				if err := parseResource(&p, tt); err != errInvalidOperation {
+					t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+				}
+			}
+
+			rhdr, err := p.ResourceHeader()
+			if err != nil {
+				if err == ErrSectionDone {
+					break
+				}
+				t.Fatal(err)
+			}
+
+			if _, err := p.Question(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while trying to parse question: %v, want %v", err, errInvalidOperation)
+			}
+
+			if err := p.SkipQuestions(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while trying to skip all questions: %v, want %v", err, errInvalidOperation)
+			}
+
+			for _, next := range changeSections {
+				if err := next(); err != errInvalidOperation {
+					t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+				}
+			}
+
+			for _, tt := range knownResourceTypes {
+				if rhdr.Type != tt {
+					if err := parseResource(&p, tt); err != errInvalidOperation {
+						t.Fatalf("unexpected error while using resource parsing data method: %v, want %v", err, errInvalidOperation)
+					}
+				}
+			}
+
+			if err := parseResource(&p, rhdr.Type); err != nil {
+				t.Fatal(err)
 			}
 		}
 	}
