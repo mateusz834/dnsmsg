@@ -625,8 +625,16 @@ func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) error {
 
 type headerLengthFixup int
 
+func (f headerLengthFixup) rDataLength(b *Builder) int {
+	return len(b.buf) - int(f)
+}
+
 func (f headerLengthFixup) fixup(b *Builder) {
-	packUint16(b.buf[f-2:], uint16(len(b.buf)-int(f)))
+	packUint16(b.buf[f-2:], uint16(f.rDataLength(b)))
+}
+
+func (f headerLengthFixup) currentlyStoredLength(b *Builder) uint16 {
+	return unpackUint16(b.buf[f-2:])
 }
 
 func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (headerLengthFixup, error) {
@@ -639,6 +647,97 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (head
 	b.buf = appendUint32(b.buf, hdr.TTL)
 	b.buf = appendUint16(b.buf, hdr.Length)
 	return headerLengthFixup(len(b.buf)), nil
+}
+
+type ResourceBuilder struct {
+	b     *Builder
+	fixup headerLengthFixup
+}
+
+func (b *ResourceBuilder) isCallValid() {
+	if b.fixup.rDataLength(b.b) != int(b.fixup.currentlyStoredLength(b.b)) {
+		panic("dnsmsg: ResourceBuilder used after new resource header has been added")
+	}
+}
+
+var errResourceTooLong = errors.New("too long resource")
+
+func (b *ResourceBuilder) Length() int {
+	b.isCallValid()
+	return b.fixup.rDataLength(b.b)
+}
+
+func (b *ResourceBuilder) Name(name RawName, compress bool) error {
+	b.isCallValid()
+	before := b.b.buf
+	b.b.buf = b.b.nb.appendName(b.b.buf, b.b.headerStartOffset, name, compress)
+	if b.fixup.rDataLength(b.b) > math.MaxUint16 {
+		b.b.buf = before
+		return errResourceTooLong
+	}
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *ResourceBuilder) Bytes(raw []byte) error {
+	b.isCallValid()
+	if b.Length()+len(raw) > math.MaxUint16 {
+		return errResourceTooLong
+	}
+	b.b.buf = append(b.b.buf, raw...)
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *ResourceBuilder) Uint8(val uint8) error {
+	b.isCallValid()
+	if b.Length()+1 > math.MaxUint16 {
+		return errResourceTooLong
+	}
+	b.b.buf = append(b.b.buf, val)
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *ResourceBuilder) Uint16(val uint16) error {
+	b.isCallValid()
+	if b.Length()+2 > math.MaxUint16 {
+		return errResourceTooLong
+	}
+	b.b.buf = appendUint16(b.b.buf, val)
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *ResourceBuilder) Uint32(val uint32) error {
+	b.isCallValid()
+	if b.Length()+4 > math.MaxUint16 {
+		return errResourceTooLong
+	}
+	b.b.buf = appendUint32(b.b.buf, val)
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *ResourceBuilder) Uint64(val uint64) error {
+	b.isCallValid()
+	if b.Length()+8 > math.MaxUint16 {
+		return errResourceTooLong
+	}
+	b.b.buf = appendUint64(b.b.buf, val)
+	b.fixup.fixup(b.b)
+	return nil
+}
+
+func (b *Builder) ResourceBuilder(hdr ResourceHeader[RawName]) (ResourceBuilder, error) {
+	f, err := b.appendHeaderWithLengthFixup(hdr)
+	if err != nil {
+		return ResourceBuilder{}, err
+	}
+	return ResourceBuilder{
+		b:     b,
+		fixup: f,
+	}, nil
 }
 
 const (

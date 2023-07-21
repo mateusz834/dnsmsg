@@ -642,3 +642,151 @@ func TestBuilder(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuilderResourceBuilder(t *testing.T) {
+	b := StartBuilder(make([]byte, 0, 128), 0, 0)
+	b.StartAnswers()
+	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  54839,
+		Class: ClassIN,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Name(MustNewRawName("www.example.com"), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Bytes([]byte{128, 238, 197}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Uint8(237); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Uint16(23837); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Uint32(3847323837); err != nil {
+		t.Fatal(err)
+	}
+	if err := rb.Uint64(3874898383473443); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.ResourceA(ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Class: ClassIN,
+		Type:  TypeA,
+	}, ResourceA{}); err != nil {
+		t.Fatal(err)
+	}
+
+	expectPanic := func(f func()) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("function didn't panic")
+			}
+		}()
+		f()
+	}
+	expectPanic(func() { rb.Length() })
+	expectPanic(func() { rb.Bytes([]byte{1}) })
+	expectPanic(func() { rb.Uint8(1) })
+	expectPanic(func() { rb.Uint16(1) })
+	expectPanic(func() { rb.Uint32(1) })
+	expectPanic(func() { rb.Uint64(1) })
+
+	p, hdr, err := Parse(b.Bytes())
+	expect := Header{ANCount: 2}
+	if hdr != expect {
+		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+	}
+
+	if err := p.StartAnswers(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	rp, err := p.ResourceParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name, err := rp.Name()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !name.EqualName(MustNewName("www.example.com")) {
+		t.Fatal("name is not equal to www.example.com")
+	}
+
+	if !name.Compressed() {
+		t.Fatal("name is not compressed")
+	}
+
+	rawBytes, err := rp.Bytes(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectRaw := []byte{128, 238, 197}
+	if !bytes.Equal(rawBytes, expectRaw) {
+		t.Fatalf("rp.Bytes(3) = %v, want %v", rawBytes, expectRaw)
+	}
+
+	name2, err := rp.Name()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !name2.EqualName(MustNewName("smtp.example.com")) {
+		t.Fatal("name is not equal to www.example.com")
+	}
+
+	if name2.Compressed() {
+		t.Fatal("name is compressed")
+	}
+
+	u8, err := rp.Uint8()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u8 != 237 {
+		t.Fatalf("rp.Uint8() = %v, want 237", u8)
+	}
+
+	u16, err := rp.Uint16()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u16 != 23837 {
+		t.Fatalf("rp.Uint16() = %v, want 23837", u16)
+	}
+
+	u32, err := rp.Uint32()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u32 != 3847323837 {
+		t.Fatalf("rp.Uint32() = %v, want 3847323837", u32)
+	}
+
+	u64, err := rp.Uint64()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u64 != 3874898383473443 {
+		t.Fatalf("rp.Uint64() = %v, want 3874898383473443", u64)
+	}
+
+	if err := rp.End(); err != nil {
+		t.Fatal(err)
+	}
+}
