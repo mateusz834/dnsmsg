@@ -975,11 +975,9 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rawBytes, err = rp2.Bytes(4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expect = []byte{192, 0, 2, 1}
+	rp2.Uint8()
+	rawBytes = rp2.AllBytes()
+	expect = []byte{0, 2, 1}
 	if !bytes.Equal(rawBytes, expect) {
 		t.Fatalf("rp2.Bytes() = %v, want %v", rawBytes, expect)
 	}
@@ -1291,6 +1289,7 @@ func FuzzParser(f *testing.F) {
 							rp.Uint64()
 							rp.Bytes(128)
 							rp.Len()
+							rp.AllBytes()
 						}
 					} else {
 						switch hdr.Type {
