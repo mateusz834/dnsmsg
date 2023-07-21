@@ -845,6 +845,151 @@ func TestZeroLengthRData(t *testing.T) {
 	}
 }
 
+func TestParserResourceParser(t *testing.T) {
+	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 3)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint32(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 2+6+4+2+4+8)
+
+	raw = append(raw, 0xC0, 12)
+	raw = append(raw, 221, 201, 32, 87)
+	raw = append(raw, 3, 'w', 'w', 'w', 0xC0, 12)
+	raw = binary.BigEndian.AppendUint16(raw, 45738)
+	raw = binary.BigEndian.AppendUint32(raw, 3384745738)
+	raw = binary.BigEndian.AppendUint64(raw, 9837483247384745738)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 4)
+	raw = append(raw, 192, 0, 2, 1)
+
+	p, _, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.StartAnswers(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	rp, err := p.ResourceParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SkipResourceData(); err != nil {
+		t.Fatal(err)
+	}
+
+	name, err := rp.Name()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !name.EqualName(MustNewName("example.com")) {
+		t.Fatal("name in resource header is not equal to example.com")
+	}
+
+	u8, err := rp.Uint8()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u8 != 221 {
+		t.Fatalf("rp.Uint8() = %v, want 221", u8)
+	}
+
+	rawBytes, err := rp.Bytes(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect := []byte{201, 32, 87}
+	if !bytes.Equal(rawBytes, expect) {
+		t.Fatalf("rp.Bytes() = %v, want %v", rawBytes, expect)
+	}
+
+	name, err = rp.Name()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !name.EqualName(MustNewName("www.example.com")) {
+		t.Fatal("name in resource header is not equal to www.example.com")
+	}
+
+	u16, err := rp.Uint16()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u16 != 45738 {
+		t.Fatalf("rp.Uint16() = %v, want 45738", u16)
+	}
+
+	u32, err := rp.Uint32()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u32 != 3384745738 {
+		t.Fatalf("rp.Uint32() = %v, want 3384745738", u32)
+	}
+
+	u64, err := rp.Uint64()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u64 != 9837483247384745738 {
+		t.Fatalf("rp.Uint64() = %v, want 9837483247384745738", u64)
+	}
+
+	if err := rp.End(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	rp2, err := p.ResourceParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawBytes, err = rp2.Bytes(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect = []byte{192, 0, 2, 1}
+	if !bytes.Equal(rawBytes, expect) {
+		t.Fatalf("rp2.Bytes() = %v, want %v", rawBytes, expect)
+	}
+
+	if err := rp2.End(); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
 func TestParserInvalidOperation(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 
@@ -906,6 +1051,10 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
 	}
 
+	if _, err := p.ResourceParser(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
+	}
+
 	for _, tt := range knownResourceTypes {
 		if err := parseResource(&p, tt); err != errInvalidOperation {
 			t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
@@ -929,6 +1078,10 @@ func TestParserInvalidOperation(t *testing.T) {
 
 	if err := p.SkipResourceData(); err != errInvalidOperation {
 		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+	}
+
+	if _, err := p.ResourceParser(); err != errInvalidOperation {
+		t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
 	}
 
 	for _, tt := range knownResourceTypes {
@@ -977,6 +1130,10 @@ func TestParserInvalidOperation(t *testing.T) {
 
 			if err := p.SkipResourceData(); err != errInvalidOperation {
 				t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+			}
+
+			if _, err := p.ResourceParser(); err != errInvalidOperation {
+				t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
 			}
 
 			for _, tt := range knownResourceTypes {
@@ -1041,9 +1198,10 @@ func FuzzParser(f *testing.F) {
 		Class: ClassIN,
 		TTL:   60,
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
-	f.Add(b.Bytes(), false, false, false, false, 100)
+	f.Add(b.Bytes(), false, false, false, false, 100, false)
 
-	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool, skipRData int) {
+
+	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool, skipRData int, useResourceParser bool) {
 		p, hdr, err := Parse(msg)
 		if err != nil {
 			return
@@ -1119,21 +1277,38 @@ func FuzzParser(f *testing.F) {
 					skipRData += skipRData / 2
 					err = p.SkipResourceData()
 				} else {
-					switch hdr.Type {
-					case TypeA:
-						_, err = p.ResourceA()
-					case TypeAAAA:
-						_, err = p.ResourceAAAA()
-					case TypeCNAME:
-						_, err = p.ResourceCNAME()
-					case TypeMX:
-						_, err = p.ResourceMX()
-					case TypeTXT:
-						var txt RawResourceTXT
-						txt, err = p.RawResourceTXT()
-						txt.ToResourceTXT()
-					default:
-						err = p.SkipResourceData()
+					if useResourceParser {
+						var rp ResourceParser
+						rp, err = p.ResourceParser()
+						if err == nil {
+							rp.Len()
+							rp.Name()
+							rp.Bytes(3)
+							rp.Uint8()
+							rp.Uint16()
+							rp.Uint32()
+							rp.Len()
+							rp.Uint64()
+							rp.Bytes(128)
+							rp.Len()
+						}
+					} else {
+						switch hdr.Type {
+						case TypeA:
+							_, err = p.ResourceA()
+						case TypeAAAA:
+							_, err = p.ResourceAAAA()
+						case TypeCNAME:
+							_, err = p.ResourceCNAME()
+						case TypeMX:
+							_, err = p.ResourceMX()
+						case TypeTXT:
+							var txt RawResourceTXT
+							txt, err = p.RawResourceTXT()
+							txt.ToResourceTXT()
+						default:
+							err = p.SkipResourceData()
+						}
 					}
 				}
 

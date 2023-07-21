@@ -385,6 +385,103 @@ func (m *Parser) unpackName(offset int) (n ParserName, off uint16, err error) {
 	return
 }
 
+type ResourceParser struct {
+	m         *Parser
+	offset    int
+	maxOffset int
+}
+
+func (p *ResourceParser) Len() int {
+	return p.maxOffset - p.offset
+}
+
+func (p *ResourceParser) End() error {
+	if p.Len() == 0 {
+		return nil
+	}
+	return errInvalidDNSMessage
+}
+
+func (p *ResourceParser) Name() (ParserName, error) {
+	name, n, err := p.m.unpackName(p.offset)
+	if err != nil {
+		return ParserName{}, err
+	}
+	if p.offset+int(n) > p.maxOffset {
+		return ParserName{}, errInvalidDNSMessage
+	}
+	p.offset += int(n)
+	return name, nil
+}
+
+func (p *ResourceParser) AllBytes() []byte {
+	offset := p.offset
+	p.offset = p.maxOffset
+	return p.m.msg[offset:p.maxOffset]
+}
+
+func (p *ResourceParser) Bytes(n int) ([]byte, error) {
+	if p.offset+n > p.maxOffset {
+		return nil, errInvalidDNSMessage
+	}
+	offset := p.offset
+	p.offset += n
+	return p.m.msg[offset:p.offset], nil
+}
+
+func (p *ResourceParser) Uint8() (uint8, error) {
+	if p.offset+1 > p.maxOffset {
+		return 0, errInvalidDNSMessage
+	}
+	offset := p.offset
+	p.offset++
+	return p.m.msg[offset], nil
+}
+
+func (p *ResourceParser) Uint16() (uint16, error) {
+	if p.offset+2 > p.maxOffset {
+		return 0, errInvalidDNSMessage
+	}
+	offset := p.offset
+	p.offset += 2
+	return unpackUint16(p.m.msg[offset:]), nil
+}
+
+func (p *ResourceParser) Uint32() (uint32, error) {
+	if p.offset+4 > p.maxOffset {
+		return 0, errInvalidDNSMessage
+	}
+	offset := p.offset
+	p.offset += 4
+	return unpackUint32(p.m.msg[offset:]), nil
+}
+
+func (p *ResourceParser) Uint64() (uint64, error) {
+	if p.offset+8 > p.maxOffset {
+		return 0, errInvalidDNSMessage
+	}
+	offset := p.offset
+	p.offset += 8
+	return unpackUint64(p.m.msg[offset:]), nil
+}
+
+func (m *Parser) ResourceParser() (ResourceParser, error) {
+	if !m.resourceData {
+		return ResourceParser{}, errInvalidOperation
+	}
+	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
+		return ResourceParser{}, errInvalidDNSMessage
+	}
+	offset := m.curOffset
+	m.curOffset += int(m.nextResourceDataLength)
+	m.resourceData = false
+	return ResourceParser{
+		m:         m,
+		offset:    offset,
+		maxOffset: m.curOffset,
+	}, nil
+}
+
 // ptrLoopCount represents an upper limit of pointers that we
 // accept in a single DNS name.
 // There is still a poosibilitty of a false positive here, but only for names
