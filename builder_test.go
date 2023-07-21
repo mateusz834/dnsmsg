@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"net/netip"
 	"strings"
 	"testing"
@@ -789,5 +790,68 @@ func TestBuilderResourceBuilder(t *testing.T) {
 
 	if err := rp.End(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuilderResourceBuilderRDataOverflow(t *testing.T) {
+	b := StartBuilder(make([]byte, 0, 128), 0, 0)
+	b.StartAnswers()
+	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
+		Name:   MustNewRawName("."),
+		Type:   54839,
+		Class:  ClassIN,
+		Length: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rb.Bytes(make([]byte, math.MaxUint16-6))
+	before := b.Bytes()[12:]
+
+	if err := rb.Name(MustNewRawName("www.example.com"), true); err == nil {
+		t.Fatal("unexpected success")
+	}
+
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified")
+	}
+
+	if err := rb.Bytes(make([]byte, 7)); err == nil {
+		t.Fatal("unexpected success")
+	}
+
+	rb.Bytes(make([]byte, 5))
+	before = b.Bytes()[12:]
+
+	if err := rb.Uint64(1); err == nil {
+		t.Fatal("unexpected success")
+	}
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified")
+	}
+
+	if err := rb.Uint32(1); err == nil {
+		t.Fatal("unexpected success")
+	}
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified")
+	}
+
+	if err := rb.Uint16(1); err == nil {
+		t.Fatal("unexpected success")
+	}
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified")
+	}
+
+	rb.Bytes(make([]byte, 1))
+	before = b.Bytes()[12:]
+
+	if err := rb.Uint8(1); err == nil {
+		t.Fatal("unexpected success")
+	}
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified")
 	}
 }
