@@ -953,6 +953,11 @@ func TestParserInvalidOperation(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			_, err = p.ResourceHeader()
+			if err != errInvalidOperation {
+				t.Fatalf("unexpected error: %v, want %v", err, errInvalidOperation)
+			}
+
 			if _, err := p.Question(); err != errInvalidOperation {
 				t.Fatalf("unexpected error while trying to parse question: %v, want %v", err, errInvalidOperation)
 			}
