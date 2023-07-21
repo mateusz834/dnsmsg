@@ -577,8 +577,8 @@ func TestParseQuestion(t *testing.T) {
 	raw = binary.BigEndian.AppendUint16(raw, 1)
 
 	raw = append(raw, []byte{3, 'w', 'w', 'w', 0xC0, 12}...)
-	raw = binary.BigEndian.AppendUint16(raw, 1)
-	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 45938)
+	raw = binary.BigEndian.AppendUint16(raw, 23819)
 
 	p, hdr, err := Parse(raw)
 	if err != nil {
@@ -616,12 +616,12 @@ func TestParseQuestion(t *testing.T) {
 		t.Errorf("name from question is not equal to www.example.com")
 	}
 
-	if q2.Type != TypeA {
-		t.Errorf("type is not equal to TypeA")
+	if q2.Type != 45938 {
+		t.Errorf("type is not equal to 45938")
 	}
 
-	if q2.Class != ClassIN {
-		t.Errorf("class is not equal to ClassIN")
+	if q2.Class != 23819 {
+		t.Errorf("class is not equal to 23819")
 	}
 
 	_, err = p.Question()
@@ -636,6 +636,172 @@ func TestParseQuestion(t *testing.T) {
 	err = p.SkipQuestions()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseResourceHeader(t *testing.T) {
+	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 3)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 4)
+	raw = append(raw, 192, 0, 2, 1)
+
+	raw = append(raw, []byte{3, 'w', 'w', 'w', 0xC0, 12}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 4)
+	raw = append(raw, 192, 0, 2, 1)
+
+	raw = append(raw, []byte{4, 's', 'm', 't', 'p', 0xC0, 12}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 4)
+	raw = append(raw, 192, 0, 2, 1)
+
+	raw = append(raw, []byte{4, 's', 'm', 't', 'p', 0xC0, 12}...)
+	raw = binary.BigEndian.AppendUint16(raw, 45182)
+	raw = binary.BigEndian.AppendUint16(raw, 52833)
+	raw = binary.BigEndian.AppendUint32(raw, 39483)
+	raw = binary.BigEndian.AppendUint16(raw, 1223)
+	raw = append(raw, make([]byte, 1223)...)
+
+	raw = append(raw, []byte{4, 's', 'm', 't', 'p', 0xC0, 12}...)
+	raw = binary.BigEndian.AppendUint16(raw, 45182)
+	raw = binary.BigEndian.AppendUint16(raw, 52833)
+	raw = binary.BigEndian.AppendUint32(raw, 39483)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	p, hdr, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expect := Header{ANCount: 1, NSCount: 1, ARCount: 3}
+	if hdr != expect {
+		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+	}
+
+	_, err = p.Question()
+	if err != ErrSectionDone {
+		t.Fatalf("unexpected error while parsing zero-count questions section: %v, expected: %v", err, ErrSectionDone)
+	}
+
+	expectName := []string{"example.com", "www.example.com", "smtp.example.com"}
+	for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+		if err := nextSection(); err != nil {
+			t.Fatalf("failed while changing parsing section: %v", err)
+		}
+
+		rhdr, err := p.ResourceHeader()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !rhdr.Name.EqualName(MustNewName(expectName[i])) {
+			t.Fatalf("resource header name is not equal to: %v", expectName[i])
+		}
+
+		if rhdr.Type != TypeA {
+			t.Fatalf("resource header type is not equal to TypeA")
+		}
+
+		if rhdr.Class != ClassIN {
+			t.Fatalf("resource header class is not equal to TypeA")
+		}
+
+		if rhdr.TTL != 3600 {
+			t.Fatalf("resource header TTL is not equal to 3600")
+		}
+
+		if rhdr.Length != 4 {
+			t.Fatalf("resource header length is not equal to 4")
+		}
+
+		a, err := p.ResourceA()
+		if err != nil {
+			t.Fatalf("failed to unpack A resource: %v", err)
+		}
+
+		expect := ResourceA{[4]byte{192, 0, 2, 1}}
+		if a != expect {
+			t.Fatalf("unexpected A resource, got: %v, expected: %v", a, expect)
+		}
+
+		if i != 2 {
+			_, err = p.ResourceHeader()
+			if err != ErrSectionDone {
+				t.Fatalf("unexpected error after parsing all resources in current section: %v, expected: %v", err, ErrSectionDone)
+			}
+		}
+	}
+
+	rhdr, err := p.ResourceHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rhdr.Type != 45182 {
+		t.Fatalf("resource header type is not equal to 45182")
+	}
+
+	if rhdr.Class != 52833 {
+		t.Fatalf("resource header class is not equal to 52833")
+	}
+
+	if rhdr.TTL != 39483 {
+		t.Fatalf("resource header TTL is not equal to 39483")
+	}
+
+	if rhdr.Length != 1223 {
+		t.Fatalf("resource header length is not equal to 1223")
+	}
+
+	if err := p.SkipResourceData(); err != nil {
+		t.Fatal(err)
+	}
+
+	rhdr, err = p.ResourceHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rhdr.Type != 45182 {
+		t.Fatalf("resource header type is not equal to 45182")
+	}
+
+	if rhdr.Class != 52833 {
+		t.Fatalf("resource header class is not equal to 52833")
+	}
+
+	if rhdr.TTL != 39483 {
+		t.Fatalf("resource header TTL is not equal to 39483")
+	}
+
+	if rhdr.Length != 0 {
+		t.Fatalf("resource header length is not equal to 0")
+	}
+
+	if err := p.SkipResourceData(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = p.ResourceHeader()
+	if err != ErrSectionDone {
+		t.Fatalf("unexpected error after parsing all resources in current section: %v, expected: %v", err, ErrSectionDone)
+	}
+
+	if err := p.End(); err != nil {
+		t.Fatal(err)
 	}
 }
 
