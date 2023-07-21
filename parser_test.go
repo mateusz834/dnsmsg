@@ -805,6 +805,46 @@ func TestParseResourceHeader(t *testing.T) {
 	}
 }
 
+func TestZeroLengthRData(t *testing.T) {
+	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	raw = append(raw, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}...)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint16(raw, 1)
+	raw = binary.BigEndian.AppendUint32(raw, 3600)
+	raw = binary.BigEndian.AppendUint16(raw, 0)
+
+	p, _, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.StartAnswers(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != errInvalidOperation {
+		t.Fatalf("unexpected error: %v, want %v", err, errInvalidOperation)
+	}
+
+	if err := p.SkipResourceData(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ResourceHeader(); err != ErrSectionDone {
+		t.Fatalf("unexpected error: %v, want %v", err, ErrSectionDone)
+	}
+}
+
 func TestParserInvalidOperation(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 
