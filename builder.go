@@ -730,6 +730,7 @@ func (b *ResourceBuilder) Uint64(val uint64) error {
 }
 
 func (b *Builder) ResourceBuilder(hdr ResourceHeader[RawName]) (ResourceBuilder, error) {
+	hdr.Length = 0
 	f, err := b.appendHeaderWithLengthFixup(hdr)
 	if err != nil {
 		return ResourceBuilder{}, err

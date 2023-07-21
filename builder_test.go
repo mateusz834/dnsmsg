@@ -647,9 +647,10 @@ func TestBuilderResourceBuilder(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
 	b.StartAnswers()
 	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
-		Type:  54839,
-		Class: ClassIN,
+		Name:   MustNewRawName("example.com"),
+		Type:   54839,
+		Class:  ClassIN,
+		Length: 100,
 	})
 	if err != nil {
 		t.Fatal(err)
