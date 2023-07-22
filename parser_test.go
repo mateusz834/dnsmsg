@@ -587,7 +587,7 @@ func TestParseQuestion(t *testing.T) {
 
 	expect := Header{QDCount: 2}
 	if hdr != expect {
-		t.Fatalf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
+		t.Errorf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
 	}
 
 	q1, err := p.Question()
@@ -708,23 +708,23 @@ func TestParseResourceHeader(t *testing.T) {
 		}
 
 		if !rhdr.Name.EqualName(MustNewName(expectNames[i])) {
-			t.Fatalf(`%v section, rhdr.Name = %v, rhdr.Name.EqualName(MustNewName("%v")) = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
+			t.Errorf(`%v section, rhdr.Name = %v, rhdr.Name.EqualName(MustNewName("%v")) = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
 		}
 
 		if rhdr.Type != TypeA {
-			t.Fatalf("%v section, rdhr.Type = %v, want: %v", curSectionName, rhdr.Type, TypeA)
+			t.Errorf("%v section, rdhr.Type = %v, want: %v", curSectionName, rhdr.Type, TypeA)
 		}
 
 		if rhdr.Class != ClassIN {
-			t.Fatalf("%v section, rdhr.Class = %v, want: %v", curSectionName, rhdr.Class, ClassIN)
+			t.Errorf("%v section, rdhr.Class = %v, want: %v", curSectionName, rhdr.Class, ClassIN)
 		}
 
 		if rhdr.TTL != 3600 {
-			t.Fatalf("%v section, rdhr.TTL = %v, want: 3600", curSectionName, rhdr.TTL)
+			t.Errorf("%v section, rdhr.TTL = %v, want: 3600", curSectionName, rhdr.TTL)
 		}
 
 		if rhdr.Length != 4 {
-			t.Fatalf("%v section, rdhr.Length = %v, want: 4", curSectionName, rhdr.Length)
+			t.Errorf("%v section, rdhr.Length = %v, want: 4", curSectionName, rhdr.Length)
 		}
 
 		resourceA, err := p.ResourceA()
@@ -734,7 +734,7 @@ func TestParseResourceHeader(t *testing.T) {
 
 		expect := ResourceA{[4]byte{192, 0, 2, 1}}
 		if resourceA != expect {
-			t.Fatalf("%v section, p.ResourceA() = %v, want: %v", curSectionName, resourceA, expect)
+			t.Errorf("%v section, p.ResourceA() = %v, want: %v", curSectionName, resourceA, expect)
 		}
 
 		if i != 2 {
@@ -751,23 +751,23 @@ func TestParseResourceHeader(t *testing.T) {
 	}
 
 	if !rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) {
-		t.Fatalf(`rhdr2.Name = %v, rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr2.Name.String())
+		t.Errorf(`rhdr2.Name = %v, rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr2.Name.String())
 	}
 
 	if rhdr2.Type != 45182 {
-		t.Fatalf("rhdr2.Type = %v, want: %v", rhdr2.Type, Type(45182))
+		t.Errorf("rhdr2.Type = %v, want: %v", rhdr2.Type, Type(45182))
 	}
 
 	if rhdr2.Class != 52833 {
-		t.Fatalf("rhdr2.Class = %v, want: %v", rhdr2.Class, Class(52833))
+		t.Errorf("rhdr2.Class = %v, want: %v", rhdr2.Class, Class(52833))
 	}
 
 	if rhdr2.TTL != 39483 {
-		t.Fatalf("rhdr2.TTL = %v, want: 39483", rhdr2.TTL)
+		t.Errorf("rhdr2.TTL = %v, want: 39483", rhdr2.TTL)
 	}
 
 	if rhdr2.Length != 1223 {
-		t.Fatalf("rhdr2.Length = %v, want: 1223", rhdr2.Length)
+		t.Errorf("rhdr2.Length = %v, want: 1223", rhdr2.Length)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
@@ -780,23 +780,23 @@ func TestParseResourceHeader(t *testing.T) {
 	}
 
 	if !rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) {
-		t.Fatalf(`rhdr3.Name = %v, rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr3.Name.String())
+		t.Errorf(`rhdr3.Name = %v, rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr3.Name.String())
 	}
 
 	if rhdr3.Type != 45182 {
-		t.Fatalf("rhdr3.Type = %v, want: %v", rhdr3.Type, Type(45182))
+		t.Errorf("rhdr3.Type = %v, want: %v", rhdr3.Type, Type(45182))
 	}
 
 	if rhdr3.Class != 52833 {
-		t.Fatalf("rhdr3.Class = %v, want: %v", rhdr3.Class, Class(52833))
+		t.Errorf("rhdr3.Class = %v, want: %v", rhdr3.Class, Class(52833))
 	}
 
 	if rhdr3.TTL != 39483 {
-		t.Fatalf("rhdr3.TTL = %v, want: 39483", rhdr3.TTL)
+		t.Errorf("rhdr3.TTL = %v, want: 39483", rhdr3.TTL)
 	}
 
 	if rhdr3.Length != 0 {
-		t.Fatalf("rhdr3.Length = %v, want: 0", rhdr3.Length)
+		t.Errorf("rhdr3.Length = %v, want: 0", rhdr3.Length)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
@@ -914,7 +914,7 @@ func TestParserResourceParser(t *testing.T) {
 	}
 
 	if l := rp.Length(); l != 26 {
-		t.Fatalf("rp.Length() = %v, want: 26", l)
+		t.Errorf("rp.Length() = %v, want: 26", l)
 	}
 
 	name, err := rp.Name()
@@ -922,7 +922,7 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("example.com")) {
-		t.Fatalf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
+		t.Errorf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
 	}
 
 	u8, err := rp.Uint8()
@@ -930,11 +930,11 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Uint8() unexpected error: %v", err)
 	}
 	if u8 != 221 {
-		t.Fatalf("rp.Uint8() = %v, want: 221", u8)
+		t.Errorf("rp.Uint8() = %v, want: 221", u8)
 	}
 
 	if l := rp.Length(); l != 23 {
-		t.Fatalf("rp.Length() = %v, want: 23", l)
+		t.Errorf("rp.Length() = %v, want: 23", l)
 	}
 
 	rawBytes, err := rp.Bytes(3)
@@ -943,7 +943,7 @@ func TestParserResourceParser(t *testing.T) {
 	}
 	expect := []byte{201, 32, 87}
 	if !bytes.Equal(rawBytes, expect) {
-		t.Fatalf("rp.Bytes() = %v, want %v", rawBytes, expect)
+		t.Errorf("rp.Bytes() = %v, want %v", rawBytes, expect)
 	}
 
 	name, err = rp.Name()
@@ -951,7 +951,7 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Fatalf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+		t.Errorf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
 	}
 
 	u16, err := rp.Uint16()
@@ -959,7 +959,7 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Uint16() unexpected error: %v", err)
 	}
 	if u16 != 45738 {
-		t.Fatalf("rp.Uint16() = %v, want: 45738", u16)
+		t.Errorf("rp.Uint16() = %v, want: 45738", u16)
 	}
 
 	u32, err := rp.Uint32()
@@ -967,7 +967,7 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Uint32() unexpected error: %v", err)
 	}
 	if u32 != 3384745738 {
-		t.Fatalf("rp.Uint32() = %v, want: 3384745738", u32)
+		t.Errorf("rp.Uint32() = %v, want: 3384745738", u32)
 	}
 
 	u64, err := rp.Uint64()
@@ -975,11 +975,11 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("rp.Uint64() unexpected error: %v", err)
 	}
 	if u64 != 9837483247384745738 {
-		t.Fatalf("rp.Uint64() = %v, want: 9837483247384745738", u64)
+		t.Errorf("rp.Uint64() = %v, want: 9837483247384745738", u64)
 	}
 
 	if l := rp.Length(); l != 0 {
-		t.Fatalf("rp.Length() = %v, want: 0", l)
+		t.Errorf("rp.Length() = %v, want: 0", l)
 	}
 
 	if err := rp.End(); err != nil {
@@ -1002,7 +1002,7 @@ func TestParserResourceParser(t *testing.T) {
 	rawBytes = rp2.AllBytes()
 	expect = []byte{0, 2, 1}
 	if !bytes.Equal(rawBytes, expect) {
-		t.Fatalf("rp2.AllBytes() = %v, want: %v", rawBytes, expect)
+		t.Errorf("rp2.AllBytes() = %v, want: %v", rawBytes, expect)
 	}
 
 	if err := rp2.End(); err != nil {
