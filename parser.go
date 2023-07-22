@@ -51,8 +51,8 @@ func Parse(msg []byte) (Parser, Header, error) {
 // use of the [Parser.Question] method.
 // After changing the parsing section (using one of the Start* methods described above) the [Parser.ResourceHeader]
 // method in conjunction with resource parsing methods ([Parser.ResourceA], [Parser.ResourceAAAA],
-// [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]) or [Parser.SkipResourceData]
-// can be used to parse the resource records.
+// [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]), [Parser.SkipResourceData] or
+// [Parser.RDParser] can be used to parse the resource data.
 //
 // Parser can be copied to preserve the current parsing state.
 type Parser struct {
