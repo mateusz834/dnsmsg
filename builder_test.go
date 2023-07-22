@@ -446,13 +446,13 @@ func TestBuilder(t *testing.T) {
 		Class: ClassIN,
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("b.Question() unexpected error: %v", err)
 	}
 
 	rhdr := ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
 		Class: ClassIN,
-		TTL:   60,
+		TTL:   3600,
 	}
 
 	var (
@@ -483,31 +483,33 @@ func TestBuilder(t *testing.T) {
 		nextSection()
 
 		rhdr.Type = TypeA
+		rhdr.TTL = 32383739
 		if err := b.ResourceA(rhdr, resourceA); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.ResourceA() unexpected error: %v", err)
 		}
 
 		rhdr.Type = TypeAAAA
+		rhdr.TTL = 3600
 		if err := b.ResourceAAAA(rhdr, resourceAAAA); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.ResourceAAAA() unexpected error: %v", err)
 		}
 
 		rhdr.Type = TypeTXT
 		if err := b.ResourceTXT(rhdr, resourceTXT); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.ResourceTXT() unexpected error: %v", err)
 		}
 		if err := b.RawResourceTXT(rhdr, rawResourceTXT); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.RawResourceTXT() unexpected error: %v", err)
 		}
 
 		rhdr.Type = TypeCNAME
 		if err := b.ResourceCNAME(rhdr, resourceCNAME); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.ResourceCNAME() unexpected error: %v", err)
 		}
 
 		rhdr.Type = TypeMX
 		if err := b.ResourceMX(rhdr, resourceMX); err != nil {
-			t.Fatal(err)
+			t.Fatalf("b.ResourceMX() unexpected error: %v", err)
 		}
 	}
 
@@ -519,7 +521,7 @@ func TestBuilder(t *testing.T) {
 
 	p, hdr, err := Parse(msg[startLength:])
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse(): unexpected error: %v", err)
 	}
 
 	expectHeader := Header{
@@ -532,120 +534,125 @@ func TestBuilder(t *testing.T) {
 	}
 
 	if hdr != expectHeader {
-		t.Errorf("expected header: %v; got %v", expectHeader, hdr)
+		t.Fatalf("Parse() unexpected header: %#v, want: %#v", hdr, expectHeader)
 	}
 
 	q, err := p.Question()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
 	if !q.Name.EqualName(MustNewName("example.com")) {
-		t.Fatal("question name is not equal to example.com")
+		t.Errorf(`q.Name = %v, q.Name.EqualName(MustNewName("example.com") = false, want: true`, q.Name.String())
 	}
 
 	if q.Type != TypeA {
-		t.Fatalf("unexpected type in question: %v", q.Type)
+		t.Errorf(`q.Type = %v, want: %v`, q.Type, TypeA)
 	}
 
 	if q.Class != ClassIN {
-		t.Fatalf("unexpected class in question: %v", q.Class)
+		t.Errorf(`q.Class = %v, want: %v`, q.Class, ClassIN)
 	}
 
-	parseResourceHeader := func(qType Type) {
+	parseResourceHeader := func(curSection string, qType Type, class Class, ttl uint32) {
 		rhdr, err := p.ResourceHeader()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
 		}
 
 		if !rhdr.Name.Equal(&q.Name) {
-			t.Fatal("resource header name is not equal to name found in question")
+			t.Errorf("rhdr.Name = %v, rhdr.Name.Equal(&q.Name) = false, want: true", rhdr.Name.String())
 		}
 
 		if !rhdr.Name.EqualName(MustNewName("example.com")) {
-			t.Fatal("resource header name is not equal to example.com")
+			t.Errorf(`rhdr.Name = %v, rhdr.Name.Equal(MustNewName("example.com")) = false, want: true`, rhdr.Name.String())
 		}
 
 		if rhdr.Type != qType {
-			t.Fatalf("unexpected type in resource header: %v, expected: %v", rhdr.Type, qType)
+			t.Errorf(`rhdr.Type = %v, want: %v`, rhdr.Type, qType)
 		}
 
-		if rhdr.Class != ClassIN {
-			t.Fatalf("unexpected class in resource header: %v", rhdr.Class)
+		if rhdr.Class != class {
+			t.Errorf(`rhdr.Class =  %v, want: %v`, rhdr.Class, class)
 		}
 
-		if rhdr.TTL != 60 {
-			t.Fatalf("unexpected ttl in resource header: %v", rhdr.TTL)
+		if rhdr.TTL != ttl {
+			t.Errorf(`rhdr.TTL = %v, want: %v`, rhdr.TTL, ttl)
 		}
 	}
 
-	for _, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+	sectionNames := []string{"Questions", "Answers", "Authorities", "Additionals"}
+	for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+		curSectionName := sectionNames[i+1]
 		if err := nextSection(); err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.Start%v(): unexpected error: %v", sectionNames[i], curSectionName, err)
 		}
 
-		parseResourceHeader(TypeA)
+		parseResourceHeader(curSectionName, TypeA, ClassIN, 32383739)
 		resA, err := p.ResourceA()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.ResourceA(): unexpected error: %v", curSectionName, err)
 		}
 		if resA != resourceA {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resA, resourceA)
+			t.Errorf("%v section, p.ResourceA() = %#v, want: %#v", curSectionName, resA, resourceA)
 		}
 
-		parseResourceHeader(TypeAAAA)
+		parseResourceHeader(curSectionName, TypeAAAA, ClassIN, 3600)
 		resAAAA, err := p.ResourceAAAA()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.ResourceAAAA(): unexpected error: %v", curSectionName, err)
 		}
 		if resAAAA != resourceAAAA {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resAAAA, resourceAAAA)
+			t.Errorf("%v section, p.ResourceAAAA() =  %#v, want: %#v", curSectionName, resAAAA, resourceAAAA)
 		}
 
-		parseResourceHeader(TypeTXT)
+		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resRawTXT, err := p.RawResourceTXT()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.RawResourceTXT(): unexpected error: %v", curSectionName, err)
 		}
 		if !bytes.Equal(resRawTXT.TXT, rawResourceTXT.TXT) {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resRawTXT, rawResourceTXT)
+			t.Errorf("%v section, p.RawResourceTXT() = t %#v, want: %#v", curSectionName, resRawTXT, rawResourceTXT)
 		}
 
-		parseResourceHeader(TypeTXT)
+		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resTXT, err := p.RawResourceTXT()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.RawResourceTXT(): unexpected error: %v", curSectionName, err)
 		}
 		if !bytes.Equal(resTXT.TXT, rawResourceTXT.TXT) {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resTXT, resourceTXT)
+			t.Errorf("%v section, p.RawResourceTXT() = %#v, want: %#v", curSectionName, resTXT, resourceTXT)
 		}
 
-		parseResourceHeader(TypeCNAME)
+		parseResourceHeader(curSectionName, TypeCNAME, ClassIN, 3600)
 		resCNAME, err := p.ResourceCNAME()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.ResourceCNAME(): unexpected error: %v", curSectionName, err)
 		}
 		if !resCNAME.CNAME.EqualName(MustNewName("www.example.com")) {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resCNAME, resourceCNAME)
+			t.Errorf("%v section, p.ResourceCNAME().CNAME = %#v, want: %#v", curSectionName, resCNAME.CNAME.String(), resourceCNAME.CNAME)
 		}
 
-		parseResourceHeader(TypeMX)
+		parseResourceHeader(curSectionName, TypeMX, ClassIN, 3600)
 		resMX, err := p.ResourceMX()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.ResourceMX(): unexpected error: %v", curSectionName, err)
 		}
-		if resMX.Pref != resourceMX.Pref || !resMX.MX.EqualName(MustNewName("smtp.example.com")) {
-			t.Fatalf("invalid resource, got %#v, expected %#v", resMX, resourceMX)
+		if resMX.Pref != resourceMX.Pref {
+			t.Errorf("%v section, p.ResourceMX().Pref = %v, want: %v", curSectionName, resMX.Pref, resourceMX.Pref)
+		}
+		if !resMX.MX.EqualName(MustNewName("smtp.example.com")) {
+			t.Errorf("%v section, p.ResourceMX().MX = %v, want: %v", curSectionName, resMX.MX.String(), resourceMX.MX)
 		}
 	}
 
 	if err := p.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.End() unexpected error: %v", err)
 	}
 }
 
 func TestBuilderResourceBuilder(t *testing.T) {
-	b := StartBuilder(make([]byte, 0, 128), 0, 0)
+	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 	b.StartAnswers()
 	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
 		Name:   MustNewRawName("example.com"),
@@ -654,28 +661,28 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		Length: 100,
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("b.ResourceBuilder() unexpected error: %v", err)
 	}
 	if err := rb.Name(MustNewRawName("www.example.com"), true); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
 	if err := rb.Bytes([]byte{128, 238, 197}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Bytes() unexpected error: %v", err)
 	}
 	if err := rb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
 	if err := rb.Uint8(237); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Uint8() unexpected error: %v", err)
 	}
 	if err := rb.Uint16(23837); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Uint16() unexpected error: %v", err)
 	}
 	if err := rb.Uint32(3847323837); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Uint32() unexpected error: %v", err)
 	}
 	if err := rb.Uint64(3874898383473443); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rb.Uint64() unexpected error: %v", err)
 	}
 
 	if err := b.ResourceA(ResourceHeader[RawName]{
@@ -683,113 +690,129 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		Class: ClassIN,
 		Type:  TypeA,
 	}, ResourceA{}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("b.ResourceA() unexpected error: %v", err)
 	}
 
-	expectPanic := func(f func()) {
+	expectPanic := func(name string, f func()) {
 		defer func() {
 			if recover() == nil {
-				t.Fatal("function didn't panic")
+				t.Fatalf("%v: didn't panic", name)
 			}
 		}()
 		f()
 	}
-	expectPanic(func() { rb.Length() })
-	expectPanic(func() { rb.Bytes([]byte{1}) })
-	expectPanic(func() { rb.Uint8(1) })
-	expectPanic(func() { rb.Uint16(1) })
-	expectPanic(func() { rb.Uint32(1) })
-	expectPanic(func() { rb.Uint64(1) })
+	expectPanic("rb.Length()", func() { rb.Length() })
+	expectPanic("rb.Bytes()", func() { rb.Bytes([]byte{1}) })
+	expectPanic("rb.Uint8()", func() { rb.Uint8(1) })
+	expectPanic("rb.Uint16()", func() { rb.Uint16(1) })
+	expectPanic("rb.Uint32()", func() { rb.Uint32(1) })
+	expectPanic("rb.Uint64()", func() { rb.Uint64(1) })
 
 	p, hdr, err := Parse(b.Bytes())
+	if err != nil {
+		t.Fatalf("Parse() unexpected error: %v", err)
+	}
+
 	expect := Header{ANCount: 2}
 	if hdr != expect {
-		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+		t.Errorf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
 	}
 
 	if err := p.StartAnswers(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.StartAnswers() unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
 	}
 
 	rp, err := p.ResourceParser()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceParser() unexpected error: %v", err)
 	}
 
 	name, err := rp.Name()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 
 	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Fatal("name is not equal to www.example.com")
+		t.Errorf(`name = %v, name.EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
 	}
 
 	if !name.Compressed() {
-		t.Fatal("name is not compressed")
+		t.Errorf("name.Compressed() = false, want: true")
 	}
 
 	rawBytes, err := rp.Bytes(3)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Bytes() unexpected error: %v", err)
 	}
 
 	expectRaw := []byte{128, 238, 197}
 	if !bytes.Equal(rawBytes, expectRaw) {
-		t.Fatalf("rp.Bytes(3) = %v, want %v", rawBytes, expectRaw)
+		t.Errorf("rp.Bytes(3) = %v, want: %v", rawBytes, expectRaw)
 	}
 
 	name2, err := rp.Name()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 
 	if !name2.EqualName(MustNewName("smtp.example.com")) {
-		t.Fatal("name is not equal to www.example.com")
+		t.Errorf(`name2 = %v, name2.EqualName(MustNewName("smtp.example.com")) = false, want: true`, name2.String())
 	}
 
 	if name2.Compressed() {
-		t.Fatal("name is compressed")
+		t.Errorf("name.Compressed() = true, want: false")
 	}
 
 	u8, err := rp.Uint8()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint8() unexpected error: %v", err)
 	}
 	if u8 != 237 {
-		t.Fatalf("rp.Uint8() = %v, want 237", u8)
+		t.Errorf("rp.Uint8() = %v, want: 237", u8)
 	}
 
 	u16, err := rp.Uint16()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint16() unexpected error: %v", err)
 	}
 	if u16 != 23837 {
-		t.Fatalf("rp.Uint16() = %v, want 23837", u16)
+		t.Errorf("rp.Uint16() = %v, want: 23837", u16)
 	}
 
 	u32, err := rp.Uint32()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint32() unexpected error: %v", err)
 	}
 	if u32 != 3847323837 {
-		t.Fatalf("rp.Uint32() = %v, want 3847323837", u32)
+		t.Errorf("rp.Uint32() = %v, want: 3847323837", u32)
 	}
 
 	u64, err := rp.Uint64()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint64() unexpected error: %v", err)
 	}
 	if u64 != 3874898383473443 {
-		t.Fatalf("rp.Uint64() = %v, want 3874898383473443", u64)
+		t.Errorf("rp.Uint64() = %v, want: 3874898383473443", u64)
 	}
 
 	if err := rp.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.End() unexpected error: %v", err)
+	}
+
+	if _, err := p.ResourceHeader(); err != nil {
+		t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
+	}
+
+	if _, err := p.ResourceA(); err != nil {
+		t.Fatalf("p.ResourceA() unexpected error: %v", err)
+	}
+
+	if err := p.End(); err != nil {
+		t.Fatalf("p.End() unexpected error: %v", err)
 	}
 }
 
@@ -810,48 +833,50 @@ func TestBuilderResourceBuilderRDataOverflow(t *testing.T) {
 	before := b.Bytes()[12:]
 
 	if err := rb.Name(MustNewRawName("www.example.com"), true); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Name(): unexpected success")
 	}
-
 	if !bytes.Equal(before, b.Bytes()[12:]) {
-		t.Fatal("message modified")
+		t.Fatal("message modified after rb.Name()")
 	}
 
 	if err := rb.Bytes(make([]byte, 7)); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Name(): unexpected success")
+	}
+	if !bytes.Equal(before, b.Bytes()[12:]) {
+		t.Fatal("message modified after rb.Bytes()")
 	}
 
 	rb.Bytes(make([]byte, 5))
 	before = b.Bytes()[12:]
 
 	if err := rb.Uint64(1); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Uint64(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
-		t.Fatal("message modified")
+		t.Fatal("message modified after rb.Uint64()")
 	}
 
 	if err := rb.Uint32(1); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Uint32(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
-		t.Fatal("message modified")
+		t.Fatal("message modified after rb.Uint32()")
 	}
 
 	if err := rb.Uint16(1); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Uint16(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
-		t.Fatal("message modified")
+		t.Fatal("message modified after rb.Uint16()")
 	}
 
 	rb.Bytes(make([]byte, 1))
 	before = b.Bytes()[12:]
 
 	if err := rb.Uint8(1); err == nil {
-		t.Fatal("unexpected success")
+		t.Fatal("rb.Uint8(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
-		t.Fatal("message modified")
+		t.Fatal("message modified after rb.Uint8()")
 	}
 }
