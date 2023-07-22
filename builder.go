@@ -476,7 +476,7 @@ func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
 	b.nb = nb
 }
 
-// Bytes returns the builded the DNS message.
+// Bytes returns the built DNS message.
 //
 // Note: Calling this method multiple times may result in invalid results, as it only returns the
 // current state of the DNS message. Any previous calls to Bytes() should be considered invalid.

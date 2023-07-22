@@ -43,7 +43,7 @@ func Parse(msg []byte) (Parser, Header, error) {
 	}, hdr, nil
 }
 
-// Parser is a incremental DNS parser.
+// Parser is an incremental DNS message parser.
 //
 // Internally the Parser contains a parsing section field, that can be changed
 // using one of these methods: [Parser.StartAnswers], [Parser.StartAuthorities], [Parser.StartAdditionals].
