@@ -432,6 +432,18 @@ const (
 	sectionAdditionals
 )
 
+// Builder is an incremental DNS message builder.
+//
+// Internally the Builder contains a building section field, that can be changed
+// using one of these methods: [Builder.StartAnswers], [Builder.StartAuthorities], [Builder.StartAdditionals].
+// By default the building section is set to questions, it allows appending questions by the
+// use of the [Builder.Question] method.
+// After changing the building section (using one of the Start* methods described above) the
+// resource building methods: ([Builder.ResourceA], [Builder.ResourceAAAA], [Builder.ResourceCNAME],
+// [Builder.ResourceMX], [Builder.RawResourceTXT], [Builder.ResourceTXT]), [Builder.SkipResourceData] or
+// [Builder.RDBuilder] can be used to append DNS resources.
+//
+// The zero value of this type shouldn't be used.
 type Builder struct {
 	buf []byte
 	nb  nameBuilderState
@@ -442,6 +454,8 @@ type Builder struct {
 	hdr        Header
 }
 
+// StartBuilder creates a new DNS builder.
+// The message is going to be appended to the provided byte slice (buf).
 func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	return Builder{
 		headerStartOffset: len(buf),
@@ -453,6 +467,8 @@ func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	}
 }
 
+// Reset restes the DNS builder.
+// The message is going to be appended to the provided byte slice (buf).
 func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
 	nb := b.nb
 	nb.reset()
@@ -460,11 +476,19 @@ func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
 	b.nb = nb
 }
 
+// Bytes returns the builded the DNS message.
+//
+// Note: Calling this method multiple times may result in invalid results, as it only returns the
+// current state of the DNS message. Any previous calls to Bytes() should be considered invalid.
 func (b *Builder) Bytes() []byte {
 	b.hdr.pack((*[12]byte)(b.buf[b.headerStartOffset:]))
 	return b.buf
 }
 
+
+// StartAnswers changes the building section from question to answers.
+//
+// It Panics when the current building section is not questions.
 func (b *Builder) StartAnswers() {
 	if b.curSection != sectionQuestions {
 		panic("invalid section")
@@ -472,6 +496,9 @@ func (b *Builder) StartAnswers() {
 	b.curSection = sectionAnswers
 }
 
+// StartAuthorities changes the building section from answers to authorities.
+//
+// It Panics when the current building section is not answers.
 func (b *Builder) StartAuthorities() {
 	if b.curSection != sectionAnswers {
 		panic("invalid section")
@@ -479,6 +506,9 @@ func (b *Builder) StartAuthorities() {
 	b.curSection = sectionAuthorities
 }
 
+// StartAuthorities changes the building section from authorities to additionals.
+//
+// It Panics when the current building section is not additionals.
 func (b *Builder) StartAdditionals() {
 	if b.curSection != sectionAuthorities {
 		panic("invalid section")
@@ -519,6 +549,10 @@ func (b *Builder) incResurceSection() error {
 	return nil
 }
 
+// Question appends a single question.
+// It errors when the amount of questions is equal to 65535.
+//
+// The building section must be set to questions, otherwise it panics.
 func (b *Builder) Question(q Question[RawName]) error {
 	if err := b.incQuestionSection(); err != nil {
 		return err
@@ -529,6 +563,10 @@ func (b *Builder) Question(q Question[RawName]) error {
 	return nil
 }
 
+// ResourceA appends a single A resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 	hdr.Length = 4
 	if err := b.appendHeader(hdr); err != nil {
@@ -538,6 +576,10 @@ func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 	return nil
 }
 
+// ResourceAAAA appends a single AAAA resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
 	hdr.Length = 16
 	if err := b.appendHeader(hdr); err != nil {
@@ -547,6 +589,10 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 	return nil
 }
 
+// ResourceCNAME appends a single CNAME resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
 	f, err := b.appendHeaderWithLengthFixup(hdr)
 	if err != nil {
@@ -557,6 +603,10 @@ func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME
 	return nil
 }
 
+// ResourceMX appends a single MX resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
 	f, err := b.appendHeaderWithLengthFixup(hdr)
 	if err != nil {
@@ -570,6 +620,10 @@ func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]
 
 var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
 
+// RawResourceTXT appends a single TXT resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT) error {
 	if len(txt.TXT) > math.MaxUint16 || !txt.isValid() {
 		return errInvalidRawTXTResource
@@ -586,6 +640,10 @@ func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT
 var errTooLongTXTString = errors.New("too long txt string")
 var errTooLongTXT = errors.New("too long txt resource")
 
+// ResourceTXT appends a single TXT resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
 	totalLength := 0
 	for _, str := range txt.TXT {
@@ -753,9 +811,12 @@ func (b *RDBuilder) Uint64(val uint64) error {
 }
 
 // RDBuilder craeates a new [RDBuilder], used for building custom resource data.
+// It errors when the amount of resources in the current section is equal to 65535.
 //
 // Note: The returned RDBuilder should not be used after creating any new resource in b.
 // Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
+//
+// The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
 	hdr.Length = 0
 	f, err := b.appendHeaderWithLengthFixup(hdr)
