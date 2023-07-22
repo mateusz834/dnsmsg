@@ -385,24 +385,24 @@ func (m *Parser) unpackName(offset int) (n ParserName, off uint16, err error) {
 	return
 }
 
-type ResourceParser struct {
+type RDParser struct {
 	m         *Parser
 	offset    int
 	maxOffset int
 }
 
-func (p *ResourceParser) Length() int {
+func (p *RDParser) Length() int {
 	return p.maxOffset - p.offset
 }
 
-func (p *ResourceParser) End() error {
+func (p *RDParser) End() error {
 	if p.Length() == 0 {
 		return nil
 	}
 	return errInvalidDNSMessage
 }
 
-func (p *ResourceParser) Name() (ParserName, error) {
+func (p *RDParser) Name() (ParserName, error) {
 	name, n, err := p.m.unpackName(p.offset)
 	if err != nil {
 		return ParserName{}, err
@@ -414,13 +414,13 @@ func (p *ResourceParser) Name() (ParserName, error) {
 	return name, nil
 }
 
-func (p *ResourceParser) AllBytes() []byte {
+func (p *RDParser) AllBytes() []byte {
 	offset := p.offset
 	p.offset = p.maxOffset
 	return p.m.msg[offset:p.maxOffset]
 }
 
-func (p *ResourceParser) Bytes(n int) ([]byte, error) {
+func (p *RDParser) Bytes(n int) ([]byte, error) {
 	if p.offset+n > p.maxOffset {
 		return nil, errInvalidDNSMessage
 	}
@@ -429,7 +429,7 @@ func (p *ResourceParser) Bytes(n int) ([]byte, error) {
 	return p.m.msg[offset:p.offset], nil
 }
 
-func (p *ResourceParser) Uint8() (uint8, error) {
+func (p *RDParser) Uint8() (uint8, error) {
 	if p.offset+1 > p.maxOffset {
 		return 0, errInvalidDNSMessage
 	}
@@ -438,7 +438,7 @@ func (p *ResourceParser) Uint8() (uint8, error) {
 	return p.m.msg[offset], nil
 }
 
-func (p *ResourceParser) Uint16() (uint16, error) {
+func (p *RDParser) Uint16() (uint16, error) {
 	if p.offset+2 > p.maxOffset {
 		return 0, errInvalidDNSMessage
 	}
@@ -447,7 +447,7 @@ func (p *ResourceParser) Uint16() (uint16, error) {
 	return unpackUint16(p.m.msg[offset:]), nil
 }
 
-func (p *ResourceParser) Uint32() (uint32, error) {
+func (p *RDParser) Uint32() (uint32, error) {
 	if p.offset+4 > p.maxOffset {
 		return 0, errInvalidDNSMessage
 	}
@@ -456,7 +456,7 @@ func (p *ResourceParser) Uint32() (uint32, error) {
 	return unpackUint32(p.m.msg[offset:]), nil
 }
 
-func (p *ResourceParser) Uint64() (uint64, error) {
+func (p *RDParser) Uint64() (uint64, error) {
 	if p.offset+8 > p.maxOffset {
 		return 0, errInvalidDNSMessage
 	}
@@ -465,17 +465,17 @@ func (p *ResourceParser) Uint64() (uint64, error) {
 	return unpackUint64(p.m.msg[offset:]), nil
 }
 
-func (m *Parser) ResourceParser() (ResourceParser, error) {
+func (m *Parser) RDParser() (RDParser, error) {
 	if !m.resourceData {
-		return ResourceParser{}, errInvalidOperation
+		return RDParser{}, errInvalidOperation
 	}
 	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
-		return ResourceParser{}, errInvalidDNSMessage
+		return RDParser{}, errInvalidDNSMessage
 	}
 	offset := m.curOffset
 	m.curOffset += int(m.nextResourceDataLength)
 	m.resourceData = false
-	return ResourceParser{
+	return RDParser{
 		m:         m,
 		offset:    offset,
 		maxOffset: m.curOffset,

@@ -853,7 +853,7 @@ func TestZeroLengthRData(t *testing.T) {
 	}
 }
 
-func TestParserResourceParser(t *testing.T) {
+func TestParserRDParser(t *testing.T) {
 	raw := binary.BigEndian.AppendUint16(make([]byte, 0, 12), 0)
 	raw = binary.BigEndian.AppendUint16(raw, 0)
 	raw = binary.BigEndian.AppendUint16(raw, 0)
@@ -900,9 +900,9 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
-	rp, err := p.ResourceParser()
+	rdp, err := p.RDParser()
 	if err != nil {
-		t.Fatalf("p.ResourceParser(): unexpected error: %v", err)
+		t.Fatalf("p.RDParser(): unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
@@ -913,76 +913,76 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("p.SkipResourceData() unexpected error: %v", err)
 	}
 
-	if l := rp.Length(); l != 26 {
-		t.Errorf("rp.Length() = %v, want: 26", l)
+	if l := rdp.Length(); l != 26 {
+		t.Errorf("rdp.Length() = %v, want: 26", l)
 	}
 
-	name, err := rp.Name()
+	name, err := rdp.Name()
 	if err != nil {
-		t.Fatalf("rp.Name() unexpected error: %v", err)
+		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("example.com")) {
-		t.Errorf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
+		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
 	}
 
-	u8, err := rp.Uint8()
+	u8, err := rdp.Uint8()
 	if err != nil {
-		t.Fatalf("rp.Uint8() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint8() unexpected error: %v", err)
 	}
 	if u8 != 221 {
-		t.Errorf("rp.Uint8() = %v, want: 221", u8)
+		t.Errorf("rdp.Uint8() = %v, want: 221", u8)
 	}
 
-	if l := rp.Length(); l != 23 {
-		t.Errorf("rp.Length() = %v, want: 23", l)
+	if l := rdp.Length(); l != 23 {
+		t.Errorf("rdp.Length() = %v, want: 23", l)
 	}
 
-	rawBytes, err := rp.Bytes(3)
+	rawBytes, err := rdp.Bytes(3)
 	if err != nil {
-		t.Fatalf("rp.Bytes() unexpected error: %v", err)
+		t.Fatalf("rdp.Bytes() unexpected error: %v", err)
 	}
 	expect := []byte{201, 32, 87}
 	if !bytes.Equal(rawBytes, expect) {
-		t.Errorf("rp.Bytes() = %v, want %v", rawBytes, expect)
+		t.Errorf("rdp.Bytes() = %v, want %v", rawBytes, expect)
 	}
 
-	name, err = rp.Name()
+	name, err = rdp.Name()
 	if err != nil {
-		t.Fatalf("rp.Name() unexpected error: %v", err)
+		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Errorf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
 	}
 
-	u16, err := rp.Uint16()
+	u16, err := rdp.Uint16()
 	if err != nil {
-		t.Fatalf("rp.Uint16() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint16() unexpected error: %v", err)
 	}
 	if u16 != 45738 {
-		t.Errorf("rp.Uint16() = %v, want: 45738", u16)
+		t.Errorf("rdp.Uint16() = %v, want: 45738", u16)
 	}
 
-	u32, err := rp.Uint32()
+	u32, err := rdp.Uint32()
 	if err != nil {
-		t.Fatalf("rp.Uint32() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint32() unexpected error: %v", err)
 	}
 	if u32 != 3384745738 {
-		t.Errorf("rp.Uint32() = %v, want: 3384745738", u32)
+		t.Errorf("rdp.Uint32() = %v, want: 3384745738", u32)
 	}
 
-	u64, err := rp.Uint64()
+	u64, err := rdp.Uint64()
 	if err != nil {
-		t.Fatalf("rp.Uint64() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint64() unexpected error: %v", err)
 	}
 	if u64 != 9837483247384745738 {
-		t.Errorf("rp.Uint64() = %v, want: 9837483247384745738", u64)
+		t.Errorf("rdp.Uint64() = %v, want: 9837483247384745738", u64)
 	}
 
-	if l := rp.Length(); l != 0 {
-		t.Errorf("rp.Length() = %v, want: 0", l)
+	if l := rdp.Length(); l != 0 {
+		t.Errorf("rdp.Length() = %v, want: 0", l)
 	}
 
-	if err := rp.End(); err != nil {
+	if err := rdp.End(); err != nil {
 		t.Fatalf("p.End(): unexpected error: %v", err)
 	}
 
@@ -990,23 +990,23 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
-	rp2, err := p.ResourceParser()
+	rdp2, err := p.RDParser()
 	if err != nil {
-		t.Fatalf("p.ResourceParser(): unexpected error: %v", err)
+		t.Fatalf("p.RDParser(): unexpected error: %v", err)
 	}
 
-	if _, err := rp2.Uint8(); err != nil {
-		t.Fatalf("rp.Uint8() unexpected error: %v", err)
+	if _, err := rdp2.Uint8(); err != nil {
+		t.Fatalf("rdp2.Uint8() unexpected error: %v", err)
 	}
 
-	rawBytes = rp2.AllBytes()
+	rawBytes = rdp2.AllBytes()
 	expect = []byte{0, 2, 1}
 	if !bytes.Equal(rawBytes, expect) {
-		t.Errorf("rp2.AllBytes() = %v, want: %v", rawBytes, expect)
+		t.Errorf("rdp2.AllBytes() = %v, want: %v", rawBytes, expect)
 	}
 
-	if err := rp2.End(); err != nil {
-		t.Fatalf("rp2.End(): unexpected error: %v", err)
+	if err := rdp2.End(); err != nil {
+		t.Fatalf("rdp2.End(): unexpected error: %v", err)
 	}
 }
 
@@ -1071,8 +1071,8 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("p.SkipResourceData() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
-	if _, err := p.ResourceParser(); err != errInvalidOperation {
-		t.Fatalf("p.ResourceParser() unexpected error: %v, want: %v", err, errInvalidOperation)
+	if _, err := p.RDParser(); err != errInvalidOperation {
+		t.Fatalf("p.RDParser() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	for _, tt := range knownResourceTypes {
@@ -1101,8 +1101,8 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("p.SkipResourceData() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
-	if _, err := p.ResourceParser(); err != errInvalidOperation {
-		t.Fatalf("p.ResourceParser(): unexpected error: %v, want: %v", err, errInvalidOperation)
+	if _, err := p.RDParser(); err != errInvalidOperation {
+		t.Fatalf("p.RDParser(): unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	for _, tt := range knownResourceTypes {
@@ -1157,8 +1157,8 @@ func TestParserInvalidOperation(t *testing.T) {
 				t.Fatalf("%v section, p.SkipResourceData() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
-			if _, err := p.ResourceParser(); err != errInvalidOperation {
-				t.Fatalf("%v section, p.ResourceParser(): unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
+			if _, err := p.RDParser(); err != errInvalidOperation {
+				t.Fatalf("%v section, p.RDParser(): unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
 			for _, tt := range knownResourceTypes {
@@ -1225,8 +1225,10 @@ func FuzzParser(f *testing.F) {
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	f.Add(b.Bytes(), false, false, false, false, 100, false)
 
+	// TODO: do something like
+	// unpack -> pack -> unpack and assert that both unpack returned the same things.
 
-	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool, skipRData int, useResourceParser bool) {
+	f.Fuzz(func(t *testing.T, msg []byte, skipQuestions, skipAnswers, skipAuthorities, skipAddtionals bool, skipRData int, useRDParser bool) {
 		p, hdr, err := Parse(msg)
 		if err != nil {
 			return
@@ -1309,25 +1311,25 @@ func FuzzParser(f *testing.F) {
 						}
 						return
 					}
-				} else if useResourceParser {
-					rp, err := p.ResourceParser()
+				} else if useRDParser {
+					rdp, err := p.RDParser()
 					if err != nil {
 						if err == errInvalidOperation {
-							t.Fatalf("%v section, p.ResourceParser(): unexpected error: %v", curSectionName, err)
+							t.Fatalf("%v section, p.RDParser(): unexpected error: %v", curSectionName, err)
 						}
 						return
 					}
-					rp.Length()
-					rp.Name()
-					rp.Bytes(3)
-					rp.Uint8()
-					rp.Uint16()
-					rp.Uint32()
-					rp.Length()
-					rp.Uint64()
-					rp.Bytes(128)
-					rp.Length()
-					rp.AllBytes()
+					rdp.Length()
+					rdp.Name()
+					rdp.Bytes(3)
+					rdp.Uint8()
+					rdp.Uint16()
+					rdp.Uint32()
+					rdp.Length()
+					rdp.Uint64()
+					rdp.Bytes(128)
+					rdp.Length()
+					rdp.AllBytes()
 				} else {
 					var err error
 					switch hdr.Type {

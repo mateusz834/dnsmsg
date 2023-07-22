@@ -651,37 +651,37 @@ func TestBuilder(t *testing.T) {
 	}
 }
 
-func TestBuilderResourceBuilder(t *testing.T) {
+func TestBuilderRDBuilder(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 	b.StartAnswers()
-	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
+	rdb, err := b.RDBUilder(ResourceHeader[RawName]{
 		Name:   MustNewRawName("example.com"),
 		Type:   54839,
 		Class:  ClassIN,
 		Length: 100,
 	})
 	if err != nil {
-		t.Fatalf("b.ResourceBuilder() unexpected error: %v", err)
+		t.Fatalf("b.RDBuilder() unexpected error: %v", err)
 	}
-	if err := rb.Name(MustNewRawName("www.example.com"), true); err != nil {
+	if err := rdb.Name(MustNewRawName("www.example.com"), true); err != nil {
 		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
-	if err := rb.Bytes([]byte{128, 238, 197}); err != nil {
+	if err := rdb.Bytes([]byte{128, 238, 197}); err != nil {
 		t.Fatalf("rb.Bytes() unexpected error: %v", err)
 	}
-	if err := rb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
+	if err := rdb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
 		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
-	if err := rb.Uint8(237); err != nil {
+	if err := rdb.Uint8(237); err != nil {
 		t.Fatalf("rb.Uint8() unexpected error: %v", err)
 	}
-	if err := rb.Uint16(23837); err != nil {
+	if err := rdb.Uint16(23837); err != nil {
 		t.Fatalf("rb.Uint16() unexpected error: %v", err)
 	}
-	if err := rb.Uint32(3847323837); err != nil {
+	if err := rdb.Uint32(3847323837); err != nil {
 		t.Fatalf("rb.Uint32() unexpected error: %v", err)
 	}
-	if err := rb.Uint64(3874898383473443); err != nil {
+	if err := rdb.Uint64(3874898383473443); err != nil {
 		t.Fatalf("rb.Uint64() unexpected error: %v", err)
 	}
 
@@ -701,12 +701,12 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		}()
 		f()
 	}
-	expectPanic("rb.Length()", func() { rb.Length() })
-	expectPanic("rb.Bytes()", func() { rb.Bytes([]byte{1}) })
-	expectPanic("rb.Uint8()", func() { rb.Uint8(1) })
-	expectPanic("rb.Uint16()", func() { rb.Uint16(1) })
-	expectPanic("rb.Uint32()", func() { rb.Uint32(1) })
-	expectPanic("rb.Uint64()", func() { rb.Uint64(1) })
+	expectPanic("rb.Length()", func() { rdb.Length() })
+	expectPanic("rb.Bytes()", func() { rdb.Bytes([]byte{1}) })
+	expectPanic("rb.Uint8()", func() { rdb.Uint8(1) })
+	expectPanic("rb.Uint16()", func() { rdb.Uint16(1) })
+	expectPanic("rb.Uint32()", func() { rdb.Uint32(1) })
+	expectPanic("rb.Uint64()", func() { rdb.Uint64(1) })
 
 	p, hdr, err := Parse(b.Bytes())
 	if err != nil {
@@ -726,14 +726,14 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
 	}
 
-	rp, err := p.ResourceParser()
+	rdp, err := p.RDParser()
 	if err != nil {
-		t.Fatalf("p.ResourceParser() unexpected error: %v", err)
+		t.Fatalf("p.RDParser() unexpected error: %v", err)
 	}
 
-	name, err := rp.Name()
+	name, err := rdp.Name()
 	if err != nil {
-		t.Fatalf("rp.Name() unexpected error: %v", err)
+		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 
 	if !name.EqualName(MustNewName("www.example.com")) {
@@ -744,19 +744,19 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		t.Errorf("name.Compressed() = false, want: true")
 	}
 
-	rawBytes, err := rp.Bytes(3)
+	rawBytes, err := rdp.Bytes(3)
 	if err != nil {
-		t.Fatalf("rp.Bytes() unexpected error: %v", err)
+		t.Fatalf("rdp.Bytes() unexpected error: %v", err)
 	}
 
 	expectRaw := []byte{128, 238, 197}
 	if !bytes.Equal(rawBytes, expectRaw) {
-		t.Errorf("rp.Bytes(3) = %v, want: %v", rawBytes, expectRaw)
+		t.Errorf("rdp.Bytes(3) = %v, want: %v", rawBytes, expectRaw)
 	}
 
-	name2, err := rp.Name()
+	name2, err := rdp.Name()
 	if err != nil {
-		t.Fatalf("rp.Name() unexpected error: %v", err)
+		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 
 	if !name2.EqualName(MustNewName("smtp.example.com")) {
@@ -767,40 +767,40 @@ func TestBuilderResourceBuilder(t *testing.T) {
 		t.Errorf("name.Compressed() = true, want: false")
 	}
 
-	u8, err := rp.Uint8()
+	u8, err := rdp.Uint8()
 	if err != nil {
-		t.Fatalf("rp.Uint8() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint8() unexpected error: %v", err)
 	}
 	if u8 != 237 {
-		t.Errorf("rp.Uint8() = %v, want: 237", u8)
+		t.Errorf("rdp.Uint8() = %v, want: 237", u8)
 	}
 
-	u16, err := rp.Uint16()
+	u16, err := rdp.Uint16()
 	if err != nil {
-		t.Fatalf("rp.Uint16() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint16() unexpected error: %v", err)
 	}
 	if u16 != 23837 {
-		t.Errorf("rp.Uint16() = %v, want: 23837", u16)
+		t.Errorf("rdp.Uint16() = %v, want: 23837", u16)
 	}
 
-	u32, err := rp.Uint32()
+	u32, err := rdp.Uint32()
 	if err != nil {
-		t.Fatalf("rp.Uint32() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint32() unexpected error: %v", err)
 	}
 	if u32 != 3847323837 {
-		t.Errorf("rp.Uint32() = %v, want: 3847323837", u32)
+		t.Errorf("rdp.Uint32() = %v, want: 3847323837", u32)
 	}
 
-	u64, err := rp.Uint64()
+	u64, err := rdp.Uint64()
 	if err != nil {
-		t.Fatalf("rp.Uint64() unexpected error: %v", err)
+		t.Fatalf("rdp.Uint64() unexpected error: %v", err)
 	}
 	if u64 != 3874898383473443 {
-		t.Errorf("rp.Uint64() = %v, want: 3874898383473443", u64)
+		t.Errorf("rdp.Uint64() = %v, want: 3874898383473443", u64)
 	}
 
-	if err := rp.End(); err != nil {
-		t.Fatalf("rp.End() unexpected error: %v", err)
+	if err := rdp.End(); err != nil {
+		t.Fatalf("rdp.End() unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
@@ -816,64 +816,64 @@ func TestBuilderResourceBuilder(t *testing.T) {
 	}
 }
 
-func TestBuilderResourceBuilderRDataOverflow(t *testing.T) {
+func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
 	b.StartAnswers()
-	rb, err := b.ResourceBuilder(ResourceHeader[RawName]{
+	rdb, err := b.RDBUilder(ResourceHeader[RawName]{
 		Name:   MustNewRawName("."),
 		Type:   54839,
 		Class:  ClassIN,
 		Length: 100,
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("b.RDBuilder() unexpected error: %v", err)
 	}
 
-	rb.Bytes(make([]byte, math.MaxUint16-6))
+	rdb.Bytes(make([]byte, math.MaxUint16-6))
 	before := b.Bytes()[12:]
 
-	if err := rb.Name(MustNewRawName("www.example.com"), true); err == nil {
+	if err := rdb.Name(MustNewRawName("www.example.com"), true); err == nil {
 		t.Fatal("rb.Name(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
 		t.Fatal("message modified after rb.Name()")
 	}
 
-	if err := rb.Bytes(make([]byte, 7)); err == nil {
+	if err := rdb.Bytes(make([]byte, 7)); err == nil {
 		t.Fatal("rb.Name(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
 		t.Fatal("message modified after rb.Bytes()")
 	}
 
-	rb.Bytes(make([]byte, 5))
+	rdb.Bytes(make([]byte, 5))
 	before = b.Bytes()[12:]
 
-	if err := rb.Uint64(1); err == nil {
+	if err := rdb.Uint64(1); err == nil {
 		t.Fatal("rb.Uint64(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
 		t.Fatal("message modified after rb.Uint64()")
 	}
 
-	if err := rb.Uint32(1); err == nil {
+	if err := rdb.Uint32(1); err == nil {
 		t.Fatal("rb.Uint32(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
 		t.Fatal("message modified after rb.Uint32()")
 	}
 
-	if err := rb.Uint16(1); err == nil {
+	if err := rdb.Uint16(1); err == nil {
 		t.Fatal("rb.Uint16(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
 		t.Fatal("message modified after rb.Uint16()")
 	}
 
-	rb.Bytes(make([]byte, 1))
+	rdb.Bytes(make([]byte, 1))
 	before = b.Bytes()[12:]
 
-	if err := rb.Uint8(1); err == nil {
+	if err := rdb.Uint8(1); err == nil {
 		t.Fatal("rb.Uint8(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
