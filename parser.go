@@ -391,12 +391,12 @@ type ResourceParser struct {
 	maxOffset int
 }
 
-func (p *ResourceParser) Len() int {
+func (p *ResourceParser) Length() int {
 	return p.maxOffset - p.offset
 }
 
 func (p *ResourceParser) End() error {
-	if p.Len() == 0 {
+	if p.Length() == 0 {
 		return nil
 	}
 	return errInvalidDNSMessage

@@ -857,7 +857,7 @@ func TestParserResourceParser(t *testing.T) {
 	raw = binary.BigEndian.AppendUint16(raw, 0)
 	raw = binary.BigEndian.AppendUint16(raw, 0)
 	raw = binary.BigEndian.AppendUint32(raw, 0)
-	raw = binary.BigEndian.AppendUint16(raw, 2+6+4+2+4+8)
+	raw = binary.BigEndian.AppendUint16(raw, 26)
 
 	raw = append(raw, 0xC0, 12)
 	raw = append(raw, 221, 201, 32, 87)
@@ -905,6 +905,10 @@ func TestParserResourceParser(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if l := rp.Length(); l != 26 {
+		t.Fatalf("rp.Length() = %v, want 26", l)
+	}
+
 	name, err := rp.Name()
 	if err != nil {
 		t.Fatal(err)
@@ -919,6 +923,10 @@ func TestParserResourceParser(t *testing.T) {
 	}
 	if u8 != 221 {
 		t.Fatalf("rp.Uint8() = %v, want 221", u8)
+	}
+
+	if l := rp.Length(); l != 23 {
+		t.Fatalf("rp.Length() = %v, want 23", l)
 	}
 
 	rawBytes, err := rp.Bytes(3)
@@ -960,6 +968,10 @@ func TestParserResourceParser(t *testing.T) {
 	}
 	if u64 != 9837483247384745738 {
 		t.Fatalf("rp.Uint64() = %v, want 9837483247384745738", u64)
+	}
+
+	if l := rp.Length(); l != 0 {
+		t.Fatalf("rp.Length() = %v, want 0", l)
 	}
 
 	if err := rp.End(); err != nil {
@@ -1279,16 +1291,16 @@ func FuzzParser(f *testing.F) {
 						var rp ResourceParser
 						rp, err = p.ResourceParser()
 						if err == nil {
-							rp.Len()
+							rp.Length()
 							rp.Name()
 							rp.Bytes(3)
 							rp.Uint8()
 							rp.Uint16()
 							rp.Uint32()
-							rp.Len()
+							rp.Length()
 							rp.Uint64()
 							rp.Bytes(128)
-							rp.Len()
+							rp.Length()
 							rp.AllBytes()
 						}
 					} else {
