@@ -546,21 +546,21 @@ func TestParse(t *testing.T) {
 
 	p, hdr, err := Parse(raw)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	if hdr != expect {
-		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+		t.Fatalf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
 	}
 
 	_, err = p.Question()
 	if err != errInvalidDNSName {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("p.Question() unexpected error: %v, want: %v", err, errInvalidDNSName)
 	}
 
 	_, _, err = Parse(raw[:11])
 	if err == nil {
-		t.Fatal("unexpected success while parsing too short dns message")
+		t.Fatal("Parse(raw[:11]): unexpected success while parsing too short dns message")
 	}
 }
 
@@ -582,60 +582,59 @@ func TestParseQuestion(t *testing.T) {
 
 	p, hdr, err := Parse(raw)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	expect := Header{QDCount: 2}
 	if hdr != expect {
-		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+		t.Fatalf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
 	}
 
 	q1, err := p.Question()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
 	if !q1.Name.EqualName(MustNewName("example.com")) {
-		t.Errorf("name from question is not equal to example.com")
+		t.Errorf(`q1.Name = %v, q1.Name.EqualName(MustNewName("example.com")) = false, want: true`, q1.Name.String())
 	}
 
 	if q1.Type != TypeA {
-		t.Errorf("type is not equal to TypeA")
+		t.Errorf(`q1.Type = %v, want: %v`, q1.Type, TypeA)
 	}
 
 	if q1.Class != ClassIN {
-		t.Errorf("class is not equal to ClassIN")
+		t.Errorf(`q1.Class = %v, want: %v`, q1.Class, ClassIN)
 	}
 
 	q2, err := p.Question()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
 	if !q2.Name.EqualName(MustNewName("www.example.com")) {
-		t.Errorf("name from question is not equal to www.example.com")
+		t.Errorf(`q2.Name = %v, q2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, q2.Name.String())
 	}
 
 	if q2.Type != 45938 {
-		t.Errorf("type is not equal to 45938")
+		t.Errorf(`q2.Type = %v, want: %v`, q2.Type, Type(45938))
 	}
 
 	if q2.Class != 23819 {
-		t.Errorf("class is not equal to 23819")
+		t.Errorf(`q2.Class = %v, want: %v`, q2.Class, Class(23819))
 	}
 
-	_, err = p.Question()
-	if err != ErrSectionDone {
-		t.Fatalf("unexpected error after parsing all questions: %v, expected: %v", err, ErrSectionDone)
+	if _, err := p.Question(); err != ErrSectionDone {
+		t.Fatalf("p.Question() unexpected error after parsing all questions: %v, want: %v", err, ErrSectionDone)
 	}
 
 	if err := p.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.End() unexpected error: %v", err)
 	}
 
 	err = p.SkipQuestions()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("p.SkipQuestions() unexpected error: %v", err)
 	}
 }
 
@@ -683,125 +682,134 @@ func TestParseResourceHeader(t *testing.T) {
 
 	p, hdr, err := Parse(raw)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	expect := Header{ANCount: 1, NSCount: 1, ARCount: 3}
 	if hdr != expect {
-		t.Fatalf("Parse returned header: %#v, expected: %#v", hdr, expect)
+		t.Fatalf("Parse() unexpected header: %#v, want: %#v", hdr, expect)
 	}
 
-	_, err = p.Question()
-	if err != ErrSectionDone {
-		t.Fatalf("unexpected error while parsing zero-count questions section: %v, expected: %v", err, ErrSectionDone)
+	if _, err := p.Question(); err != ErrSectionDone {
+		t.Fatalf("p.Question() unexpected error while parsing zero-count questions section: %v, want: %v", err, ErrSectionDone)
 	}
 
-	expectName := []string{"example.com", "www.example.com", "smtp.example.com"}
+	expectNames := []string{"example.com", "www.example.com", "smtp.example.com"}
+	sectionNames := []string{"Questions", "Answers", "Authorities", "Additionals"}
 	for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+		curSectionName := sectionNames[i+1]
 		if err := nextSection(); err != nil {
-			t.Fatalf("failed while changing parsing section: %v", err)
+			t.Fatalf("%v section, p.Start%v(): unexpected error: %v", sectionNames[i], curSectionName, err)
 		}
 
 		rhdr, err := p.ResourceHeader()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.ResourceHeader(): unexpected error: %v", curSectionName, err)
 		}
 
-		if !rhdr.Name.EqualName(MustNewName(expectName[i])) {
-			t.Fatalf("resource header name is not equal to: %v", expectName[i])
+		if !rhdr.Name.EqualName(MustNewName(expectNames[i])) {
+			t.Fatalf(`%v section, rhdr.Name = %v, rhdr.Name.EqualName(MustNewName("%v")) = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
 		}
 
 		if rhdr.Type != TypeA {
-			t.Fatalf("resource header type is not equal to TypeA")
+			t.Fatalf("%v section, rdhr.Type = %v, want: %v", curSectionName, rhdr.Type, TypeA)
 		}
 
 		if rhdr.Class != ClassIN {
-			t.Fatalf("resource header class is not equal to TypeA")
+			t.Fatalf("%v section, rdhr.Class = %v, want: %v", curSectionName, rhdr.Class, ClassIN)
 		}
 
 		if rhdr.TTL != 3600 {
-			t.Fatalf("resource header TTL is not equal to 3600")
+			t.Fatalf("%v section, rdhr.TTL = %v, want: 3600", curSectionName, rhdr.TTL)
 		}
 
 		if rhdr.Length != 4 {
-			t.Fatalf("resource header length is not equal to 4")
+			t.Fatalf("%v section, rdhr.Length = %v, want: 4", curSectionName, rhdr.Length)
 		}
 
-		a, err := p.ResourceA()
+		resourceA, err := p.ResourceA()
 		if err != nil {
-			t.Fatalf("failed to unpack A resource: %v", err)
+			t.Fatalf("%v section, p.ResourceA() unexpected error: %v", curSectionName, err)
 		}
 
 		expect := ResourceA{[4]byte{192, 0, 2, 1}}
-		if a != expect {
-			t.Fatalf("unexpected A resource, got: %v, expected: %v", a, expect)
+		if resourceA != expect {
+			t.Fatalf("%v section, p.ResourceA() = %v, want: %v", curSectionName, resourceA, expect)
 		}
 
 		if i != 2 {
 			_, err = p.ResourceHeader()
 			if err != ErrSectionDone {
-				t.Fatalf("unexpected error after parsing all resources in current section: %v, expected: %v", err, ErrSectionDone)
+				t.Fatalf("%v section, p.ResourceHeader() unexpected error: %v, want: %v", curSectionName, err, ErrSectionDone)
 			}
 		}
 	}
 
-	rhdr, err := p.ResourceHeader()
+	rhdr2, err := p.ResourceHeader()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
-	if rhdr.Type != 45182 {
-		t.Fatalf("resource header type is not equal to 45182")
+	if !rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) {
+		t.Fatalf(`rhdr2.Name = %v, rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr2.Name.String())
 	}
 
-	if rhdr.Class != 52833 {
-		t.Fatalf("resource header class is not equal to 52833")
+	if rhdr2.Type != 45182 {
+		t.Fatalf("rhdr2.Type = %v, want: %v", rhdr2.Type, Type(45182))
 	}
 
-	if rhdr.TTL != 39483 {
-		t.Fatalf("resource header TTL is not equal to 39483")
+	if rhdr2.Class != 52833 {
+		t.Fatalf("rhdr2.Class = %v, want: %v", rhdr2.Class, Class(52833))
 	}
 
-	if rhdr.Length != 1223 {
-		t.Fatalf("resource header length is not equal to 1223")
+	if rhdr2.TTL != 39483 {
+		t.Fatalf("rhdr2.TTL = %v, want: 39483", rhdr2.TTL)
+	}
+
+	if rhdr2.Length != 1223 {
+		t.Fatalf("rhdr2.Length = %v, want: 1223", rhdr2.Length)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v", err)
 	}
 
-	rhdr, err = p.ResourceHeader()
+	rhdr3, err := p.ResourceHeader()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
 	}
 
-	if rhdr.Type != 45182 {
-		t.Fatalf("resource header type is not equal to 45182")
+	if !rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) {
+		t.Fatalf(`rhdr3.Name = %v, rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr3.Name.String())
 	}
 
-	if rhdr.Class != 52833 {
-		t.Fatalf("resource header class is not equal to 52833")
+	if rhdr3.Type != 45182 {
+		t.Fatalf("rhdr3.Type = %v, want: %v", rhdr3.Type, Type(45182))
 	}
 
-	if rhdr.TTL != 39483 {
-		t.Fatalf("resource header TTL is not equal to 39483")
+	if rhdr3.Class != 52833 {
+		t.Fatalf("rhdr3.Class = %v, want: %v", rhdr3.Class, Class(52833))
 	}
 
-	if rhdr.Length != 0 {
-		t.Fatalf("resource header length is not equal to 0")
+	if rhdr3.TTL != 39483 {
+		t.Fatalf("rhdr3.TTL = %v, want: 39483", rhdr3.TTL)
+	}
+
+	if rhdr3.Length != 0 {
+		t.Fatalf("rhdr3.Length = %v, want: 0", rhdr3.Length)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v", err)
 	}
 
 	_, err = p.ResourceHeader()
 	if err != ErrSectionDone {
-		t.Fatalf("unexpected error after parsing all resources in current section: %v, expected: %v", err, ErrSectionDone)
+		t.Fatalf("p.ResourceHeader() unexpected error: %v, want: %v", err, ErrSectionDone)
 	}
 
 	if err := p.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.End() unexpected error: %v", err)
 	}
 }
 
@@ -821,27 +829,27 @@ func TestZeroLengthRData(t *testing.T) {
 
 	p, _, err := Parse(raw)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	if err := p.StartAnswers(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.StartAnswers() unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != errInvalidOperation {
-		t.Fatalf("unexpected error: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.ResourceHeader() unexpected error: %v, want %v", err, errInvalidOperation)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != ErrSectionDone {
-		t.Fatalf("unexpected error: %v, want %v", err, ErrSectionDone)
+		t.Fatalf("p.ResourceHeader() unexpected error: %v, want %v", err, ErrSectionDone)
 	}
 }
 
@@ -881,57 +889,57 @@ func TestParserResourceParser(t *testing.T) {
 
 	p, _, err := Parse(raw)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	if err := p.StartAnswers(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.StartAnswers() unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
 	rp, err := p.ResourceParser()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceParser(): unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
 	if err := p.SkipResourceData(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v", err)
 	}
 
 	if l := rp.Length(); l != 26 {
-		t.Fatalf("rp.Length() = %v, want 26", l)
+		t.Fatalf("rp.Length() = %v, want: 26", l)
 	}
 
 	name, err := rp.Name()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("example.com")) {
-		t.Fatal("name in resource header is not equal to example.com")
+		t.Fatalf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
 	}
 
 	u8, err := rp.Uint8()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint8() unexpected error: %v", err)
 	}
 	if u8 != 221 {
-		t.Fatalf("rp.Uint8() = %v, want 221", u8)
+		t.Fatalf("rp.Uint8() = %v, want: 221", u8)
 	}
 
 	if l := rp.Length(); l != 23 {
-		t.Fatalf("rp.Length() = %v, want 23", l)
+		t.Fatalf("rp.Length() = %v, want: 23", l)
 	}
 
 	rawBytes, err := rp.Bytes(3)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Bytes() unexpected error: %v", err)
 	}
 	expect := []byte{201, 32, 87}
 	if !bytes.Equal(rawBytes, expect) {
@@ -940,64 +948,66 @@ func TestParserResourceParser(t *testing.T) {
 
 	name, err = rp.Name()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Name() unexpected error: %v", err)
 	}
 	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Fatal("name in resource header is not equal to www.example.com")
+		t.Fatalf(`rp.Name() = %v, rp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
 	}
 
 	u16, err := rp.Uint16()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint16() unexpected error: %v", err)
 	}
 	if u16 != 45738 {
-		t.Fatalf("rp.Uint16() = %v, want 45738", u16)
+		t.Fatalf("rp.Uint16() = %v, want: 45738", u16)
 	}
 
 	u32, err := rp.Uint32()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint32() unexpected error: %v", err)
 	}
 	if u32 != 3384745738 {
-		t.Fatalf("rp.Uint32() = %v, want 3384745738", u32)
+		t.Fatalf("rp.Uint32() = %v, want: 3384745738", u32)
 	}
 
 	u64, err := rp.Uint64()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp.Uint64() unexpected error: %v", err)
 	}
 	if u64 != 9837483247384745738 {
-		t.Fatalf("rp.Uint64() = %v, want 9837483247384745738", u64)
+		t.Fatalf("rp.Uint64() = %v, want: 9837483247384745738", u64)
 	}
 
 	if l := rp.Length(); l != 0 {
-		t.Fatalf("rp.Length() = %v, want 0", l)
+		t.Fatalf("rp.Length() = %v, want: 0", l)
 	}
 
 	if err := rp.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.End(): unexpected error: %v", err)
 	}
 
 	if _, err := p.ResourceHeader(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
 	rp2, err := p.ResourceParser()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("p.ResourceParser(): unexpected error: %v", err)
 	}
 
-	rp2.Uint8()
+	if _, err := rp2.Uint8(); err != nil {
+		t.Fatalf("rp.Uint8() unexpected error: %v", err)
+	}
+
 	rawBytes = rp2.AllBytes()
 	expect = []byte{0, 2, 1}
 	if !bytes.Equal(rawBytes, expect) {
-		t.Fatalf("rp2.Bytes() = %v, want %v", rawBytes, expect)
+		t.Fatalf("rp2.AllBytes() = %v, want: %v", rawBytes, expect)
 	}
 
 	if err := rp2.End(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("rp2.End(): unexpected error: %v", err)
 	}
-
 }
 
 func TestParserInvalidOperation(t *testing.T) {
@@ -1031,7 +1041,7 @@ func TestParserInvalidOperation(t *testing.T) {
 
 	p, hdr, err := Parse(b.Bytes())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
 	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeTXT, TypeCNAME, TypeMX}
@@ -1054,26 +1064,27 @@ func TestParserInvalidOperation(t *testing.T) {
 	}
 
 	if err := p.SkipResources(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while skipping all resources: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.SkipResources() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	if err := p.SkipResourceData(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	if _, err := p.ResourceParser(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.ResourceParser() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	for _, tt := range knownResourceTypes {
 		if err := parseResource(&p, tt); err != errInvalidOperation {
-			t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+			t.Fatalf("parseResource unexpected error while parsing %v resource: %v, want: %v", tt, err, errInvalidOperation)
 		}
 	}
 
-	for _, next := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+	sectionNames := []string{"Questions", "Answers", "Authorities", "Additionals"}
+	for i, next := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
 		if err := next(); err != errInvalidOperation {
-			t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+			t.Fatalf("p.Start%v(): %v, want: %v", sectionNames[i+1], err, errInvalidOperation)
 		}
 	}
 
@@ -1083,72 +1094,76 @@ func TestParserInvalidOperation(t *testing.T) {
 	}
 
 	if err := p.SkipResources(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while skipping all resources: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.SkipResources() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	if err := p.SkipResourceData(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.SkipResourceData() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	if _, err := p.ResourceParser(); err != errInvalidOperation {
-		t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
+		t.Fatalf("p.ResourceParser(): unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	for _, tt := range knownResourceTypes {
 		if err := parseResource(&p, tt); err != errInvalidOperation {
-			t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+			t.Fatalf("parseResource unexpected error while parsing %v resource: %v, want: %v", tt, err, errInvalidOperation)
 		}
 	}
 
-	for _, next := range []func() error{p.StartAuthorities, p.StartAdditionals} {
+	for i, next := range []func() error{p.StartAuthorities, p.StartAdditionals} {
 		if err := next(); err != errInvalidOperation {
-			t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+			t.Fatalf("p.Start%v(): %v, want: %v", sectionNames[i+2], err, errInvalidOperation)
 		}
 	}
 
 	expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
 	changeSections := []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals}
 	for curSection, nextSection := range changeSections {
+		sectionName := sectionNames[curSection+1]
 		if err := nextSection(); err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v section, p.Start%v(): unexpected error: %v", sectionNames[curSection], sectionName, err)
 		}
 
 		for count := expectCounts[curSection]; ; count-- {
 			if _, err := p.Question(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while trying to parse question: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.Question(): unexpected error: %v", sectionName, err)
 			}
 
 			if err := p.SkipQuestions(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while trying to skip all questions: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.SkipQuestions(): unexpected error: %v", sectionName, err)
 			}
 
 			invalidChangeSection := changeSections
+			invalidSectionNames := sectionNames[1:]
 			if count == 0 {
 				switch curSection {
 				case 0:
 					invalidChangeSection = []func() error{p.StartAnswers, p.StartAdditionals}
+					invalidSectionNames = []string{"Answers", "Additionals"}
 				case 1:
 					invalidChangeSection = []func() error{p.StartAnswers, p.StartAuthorities}
+					invalidSectionNames = []string{"Answers", "Authorities"}
 				}
 			}
 
-			for _, next := range invalidChangeSection {
+			for i, next := range invalidChangeSection {
 				if err := next(); err != errInvalidOperation {
-					t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+					t.Fatalf("%v section, p.Start%v(): %v, want: %v", sectionName, invalidSectionNames[i], err, errInvalidOperation)
 				}
 			}
 
 			if err := p.SkipResourceData(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while skipping resource data: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.SkipResourceData() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
 			if _, err := p.ResourceParser(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while creating resource parser: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.ResourceParser(): unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
 			for _, tt := range knownResourceTypes {
 				if err := parseResource(&p, tt); err != errInvalidOperation {
-					t.Fatalf("unexpected error while using resource parsing data methods: %v, want %v", err, errInvalidOperation)
+					t.Fatalf("%v section, parseResource unexpected error while parsing %v resource: %v, want: %v", sectionName, tt, err, errInvalidOperation)
 				}
 			}
 
@@ -1157,38 +1172,38 @@ func TestParserInvalidOperation(t *testing.T) {
 				if err == ErrSectionDone {
 					break
 				}
-				t.Fatal(err)
+				t.Fatalf("%v section, p.ResourceHeader() unexpected error: %v", sectionName, err)
 			}
 
 			_, err = p.ResourceHeader()
 			if err != errInvalidOperation {
-				t.Fatalf("unexpected error: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.ResourceHeader() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
 			if _, err := p.Question(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while trying to parse question: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.Question() unexpected error: %v, want %v", sectionName, err, errInvalidOperation)
 			}
 
 			if err := p.SkipQuestions(); err != errInvalidOperation {
-				t.Fatalf("unexpected error while trying to skip all questions: %v, want %v", err, errInvalidOperation)
+				t.Fatalf("%v section, p.SkipQuestions() unexpected error: %v, want %v", sectionName, err, errInvalidOperation)
 			}
 
-			for _, next := range changeSections {
+			for i, next := range changeSections {
 				if err := next(); err != errInvalidOperation {
-					t.Fatalf("unexpected error while changing parsing section: %v, want %v", err, errInvalidOperation)
+					t.Fatalf("%v section, p.Start%v(): %v, want: %v", sectionName, sectionNames[i+1], err, errInvalidOperation)
 				}
 			}
 
 			for _, tt := range knownResourceTypes {
 				if rhdr.Type != tt {
 					if err := parseResource(&p, tt); err != errInvalidOperation {
-						t.Fatalf("unexpected error while using resource parsing data method: %v, want %v", err, errInvalidOperation)
+						t.Fatalf("%v section, parseResource unexpected error while parsing %v resource: %v, want: %v", sectionName, tt, err, errInvalidOperation)
 					}
 				}
 			}
 
 			if err := parseResource(&p, rhdr.Type); err != nil {
-				t.Fatal(err)
+				t.Fatalf("%v section, parseResource unexpected error while parsing %v resource: %v", sectionName, rhdr.Type, err)
 			}
 		}
 	}
@@ -1221,7 +1236,7 @@ func FuzzParser(f *testing.F) {
 			err := p.SkipQuestions()
 			if err != nil {
 				if err == errInvalidOperation {
-					t.Fatalf("unexpected %v error", errInvalidOperation)
+					t.Fatalf("p.SkipQuestions(): unexpected error: %v", err)
 				}
 				return
 			}
@@ -1232,14 +1247,14 @@ func FuzzParser(f *testing.F) {
 			_, err := p.Question()
 			if err != nil {
 				if err == errInvalidOperation {
-					t.Fatalf("unexpected %v error", errInvalidOperation)
+					t.Fatalf("p.Question(): unexpected error: %v", err)
 				}
 				if err == ErrSectionDone {
 					if count != int(hdr.QDCount) {
 						t.Errorf("unexpected amount of questions, got: %v, expected: %v", count, hdr.QDCount)
 					}
 					if _, err := p.Question(); err != ErrSectionDone {
-						t.Fatalf("unexpected error: %v, expected: %v", err, ErrSectionDone)
+						t.Fatalf("p.Question() unexpected error: %v, want: %v", err, ErrSectionDone)
 					}
 					break
 				}
@@ -1247,18 +1262,20 @@ func FuzzParser(f *testing.F) {
 			}
 		}
 
+		sectionNames := []string{"Questions", "Answers", "Authorities", "Additionals"}
 		skipAll := []bool{skipAnswers, skipAuthorities, skipAddtionals}
 		expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
 		for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+			curSectionName := sectionNames[i+1]
 			if err := nextSection(); err != nil {
-				t.Fatalf("failed while changing parsing section: %v", err)
+				t.Fatalf("%v section, p.Start%v() unexpected error: %v", sectionNames[i], curSectionName, err)
 			}
 
 			if skipAll[i] {
 				err := p.SkipResources()
 				if err != nil {
 					if err == errInvalidOperation {
-						t.Fatalf("unexpected %v error", errInvalidOperation)
+						t.Fatalf("%v section, p.SkipResources(): unexpected error: %v", curSectionName, err)
 					}
 					return
 				}
@@ -1269,14 +1286,14 @@ func FuzzParser(f *testing.F) {
 				hdr, err := p.ResourceHeader()
 				if err != nil {
 					if err == errInvalidOperation {
-						t.Fatalf("unexpected %v error", errInvalidOperation)
+						t.Fatalf("%v section, p.ResourceHeader(): unexpected error: %v", curSectionName, err)
 					}
 					if err == ErrSectionDone {
 						if count != int(expectCounts[i]) {
 							t.Errorf("unexpected amount of resources, got: %v, expected: %v", count, expectCounts[i])
 						}
 						if _, err := p.ResourceHeader(); err != ErrSectionDone {
-							t.Fatalf("unexpected error: %v, expected: %v", err, ErrSectionDone)
+							t.Fatalf("%v section, p.ResourceHeader(): unexpected error: %v, want: %v", curSectionName, err, ErrSectionDone)
 						}
 						break
 					}
@@ -1285,56 +1302,63 @@ func FuzzParser(f *testing.F) {
 
 				if count == skipRData {
 					skipRData += skipRData / 2
-					err = p.SkipResourceData()
+					err := p.SkipResourceData()
+					if err != nil {
+						if err == errInvalidOperation {
+							t.Fatalf("%v section, p.SkipResourceData(): unexpected error: %v", curSectionName, err)
+						}
+						return
+					}
+				} else if useResourceParser {
+					rp, err := p.ResourceParser()
+					if err != nil {
+						if err == errInvalidOperation {
+							t.Fatalf("%v section, p.ResourceParser(): unexpected error: %v", curSectionName, err)
+						}
+						return
+					}
+					rp.Length()
+					rp.Name()
+					rp.Bytes(3)
+					rp.Uint8()
+					rp.Uint16()
+					rp.Uint32()
+					rp.Length()
+					rp.Uint64()
+					rp.Bytes(128)
+					rp.Length()
+					rp.AllBytes()
 				} else {
-					if useResourceParser {
-						var rp ResourceParser
-						rp, err = p.ResourceParser()
-						if err == nil {
-							rp.Length()
-							rp.Name()
-							rp.Bytes(3)
-							rp.Uint8()
-							rp.Uint16()
-							rp.Uint32()
-							rp.Length()
-							rp.Uint64()
-							rp.Bytes(128)
-							rp.Length()
-							rp.AllBytes()
-						}
-					} else {
-						switch hdr.Type {
-						case TypeA:
-							_, err = p.ResourceA()
-						case TypeAAAA:
-							_, err = p.ResourceAAAA()
-						case TypeCNAME:
-							_, err = p.ResourceCNAME()
-						case TypeMX:
-							_, err = p.ResourceMX()
-						case TypeTXT:
-							var txt RawResourceTXT
-							txt, err = p.RawResourceTXT()
-							txt.ToResourceTXT()
-						default:
-							err = p.SkipResourceData()
-						}
+					var err error
+					switch hdr.Type {
+					case TypeA:
+						_, err = p.ResourceA()
+					case TypeAAAA:
+						_, err = p.ResourceAAAA()
+					case TypeCNAME:
+						_, err = p.ResourceCNAME()
+					case TypeMX:
+						_, err = p.ResourceMX()
+					case TypeTXT:
+						var txt RawResourceTXT
+						txt, err = p.RawResourceTXT()
+						txt.ToResourceTXT()
+					default:
+						err = p.SkipResourceData()
 					}
-				}
-
-				if err != nil {
-					if err == errInvalidOperation {
-						t.Fatalf("unexpected %v error", errInvalidOperation)
+					if err != nil {
+						if err == errInvalidOperation {
+							t.Fatalf("%v section, unexpected error while parsing %v resource data: %v", curSectionName, hdr.Type, err)
+						}
+						return
 					}
-					return
 				}
 			}
 		}
 
 		if err := p.End(); err != nil {
 			if err == errInvalidOperation {
-				t.Fatalf("unexpected %v error", errInvalidOperation)
+				t.Fatalf("p.End(): unexpected error: %v", err)
 			}
 			return
 		}
