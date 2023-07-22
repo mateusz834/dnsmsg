@@ -385,16 +385,21 @@ func (m *Parser) unpackName(offset int) (n ParserName, off uint16, err error) {
 	return
 }
 
+// RDParser is a resource data parser used to parse custom resources.
 type RDParser struct {
 	m         *Parser
 	offset    int
 	maxOffset int
 }
 
+// Length returns the remaining bytes in the resource data.
 func (p *RDParser) Length() int {
 	return p.maxOffset - p.offset
 }
 
+// End checks if there is any remaining data in the resource data being parsed.
+// It is used to ensure that the entire resource data has been successfully parsed and
+// no unexpected data remains.
 func (p *RDParser) End() error {
 	if p.Length() == 0 {
 		return nil
@@ -402,6 +407,7 @@ func (p *RDParser) End() error {
 	return errInvalidDNSMessage
 }
 
+// Name parses a single DNS name.
 func (p *RDParser) Name() (ParserName, error) {
 	name, n, err := p.m.unpackName(p.offset)
 	if err != nil {
@@ -414,12 +420,19 @@ func (p *RDParser) Name() (ParserName, error) {
 	return name, nil
 }
 
+// AllBytes returns all remaining bytes in p.
+// The length of the byte slice is equal to [RDParser.Length].
+//
+// The returned slice references the underlying message pased to [Parse].
 func (p *RDParser) AllBytes() []byte {
 	offset := p.offset
 	p.offset = p.maxOffset
 	return p.m.msg[offset:p.maxOffset]
 }
 
+// Bytes returns a n-length slice, errors when [RDParser.Length} < n.
+//
+// The returned slice references the underlying message pased to [Parse].
 func (p *RDParser) Bytes(n int) ([]byte, error) {
 	if p.offset+n > p.maxOffset {
 		return nil, errInvalidDNSMessage
@@ -429,6 +442,8 @@ func (p *RDParser) Bytes(n int) ([]byte, error) {
 	return p.m.msg[offset:p.offset], nil
 }
 
+// Uint8 parses a single uint8 value.
+// It requires at least one byte to be available in the RDParser to successfully parse.
 func (p *RDParser) Uint8() (uint8, error) {
 	if p.offset+1 > p.maxOffset {
 		return 0, errInvalidDNSMessage
@@ -438,6 +453,8 @@ func (p *RDParser) Uint8() (uint8, error) {
 	return p.m.msg[offset], nil
 }
 
+// Uint16 parses a single Big-Endian uint16 value.
+// It requires at least two bytes to be available in the RDParser to successfully parse.
 func (p *RDParser) Uint16() (uint16, error) {
 	if p.offset+2 > p.maxOffset {
 		return 0, errInvalidDNSMessage
@@ -447,6 +464,8 @@ func (p *RDParser) Uint16() (uint16, error) {
 	return unpackUint16(p.m.msg[offset:]), nil
 }
 
+// Uint32 parses a single Big-Endian uint32 value.
+// It requires at least four bytes to be available in the RDParser to successfully parse.
 func (p *RDParser) Uint32() (uint32, error) {
 	if p.offset+4 > p.maxOffset {
 		return 0, errInvalidDNSMessage
@@ -456,6 +475,8 @@ func (p *RDParser) Uint32() (uint32, error) {
 	return unpackUint32(p.m.msg[offset:]), nil
 }
 
+// Uint64 parses a single Big-Endian uint64 value.
+// It requires at least eight bytes to be available in the RDParser to successfully parse.
 func (p *RDParser) Uint64() (uint64, error) {
 	if p.offset+8 > p.maxOffset {
 		return 0, errInvalidDNSMessage
@@ -465,6 +486,7 @@ func (p *RDParser) Uint64() (uint64, error) {
 	return unpackUint64(p.m.msg[offset:]), nil
 }
 
+// RDParser craeates a new [RDParser], used for parsing custom resource data.
 func (m *Parser) RDParser() (RDParser, error) {
 	if !m.resourceData {
 		return RDParser{}, errInvalidOperation

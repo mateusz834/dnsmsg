@@ -654,7 +654,7 @@ func TestBuilder(t *testing.T) {
 func TestBuilderRDBuilder(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 	b.StartAnswers()
-	rdb, err := b.RDBUilder(ResourceHeader[RawName]{
+	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
 		Name:   MustNewRawName("example.com"),
 		Type:   54839,
 		Class:  ClassIN,
@@ -819,7 +819,7 @@ func TestBuilderRDBuilder(t *testing.T) {
 func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
 	b.StartAnswers()
-	rdb, err := b.RDBUilder(ResourceHeader[RawName]{
+	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
 		Name:   MustNewRawName("."),
 		Type:   54839,
 		Class:  ClassIN,

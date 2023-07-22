@@ -649,6 +649,10 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (head
 	return headerLengthFixup(len(b.buf)), nil
 }
 
+// RDParser is a resource data builder used to build custom resources.
+//
+// Note: The returned RDBuilder should not be used after creating any new resource in the [Builder].
+// Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
 type RDBuilder struct {
 	b     *Builder
 	fixup headerLengthFixup
@@ -656,17 +660,21 @@ type RDBuilder struct {
 
 func (b *RDBuilder) isCallValid() {
 	if b.fixup.rDataLength(b.b) != int(b.fixup.currentlyStoredLength(b.b)) {
-		panic("dnsmsg: RDBuilder used after new resource header has been added")
+		panic("dnsmsg: Invalid usage of RDBuilder. It is not allowed to modify the resource data after creating a new resource.")
 	}
 }
 
 var errResourceTooLong = errors.New("too long resource")
 
+// Length returns the current length of the resource data in bytes.
 func (b *RDBuilder) Length() int {
 	b.isCallValid()
 	return b.fixup.rDataLength(b.b)
 }
 
+// Name appends a DNS name to the resource data.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Name(name RawName, compress bool) error {
 	b.isCallValid()
 	before := b.b.buf
@@ -679,6 +687,9 @@ func (b *RDBuilder) Name(name RawName, compress bool) error {
 	return nil
 }
 
+// Bytes appends a raw byte slice to the resource data.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Bytes(raw []byte) error {
 	b.isCallValid()
 	if b.Length()+len(raw) > math.MaxUint16 {
@@ -689,6 +700,9 @@ func (b *RDBuilder) Bytes(raw []byte) error {
 	return nil
 }
 
+// Uint8 appends a single uint8 value to the resource data.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Uint8(val uint8) error {
 	b.isCallValid()
 	if b.Length()+1 > math.MaxUint16 {
@@ -699,6 +713,9 @@ func (b *RDBuilder) Uint8(val uint8) error {
 	return nil
 }
 
+// Uint16 appends a single uint16 value to the resource data in Big-Endian format.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Uint16(val uint16) error {
 	b.isCallValid()
 	if b.Length()+2 > math.MaxUint16 {
@@ -709,6 +726,9 @@ func (b *RDBuilder) Uint16(val uint16) error {
 	return nil
 }
 
+// Uint32 appends a single uint16 value to the resource data in Big-Endian format.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Uint32(val uint32) error {
 	b.isCallValid()
 	if b.Length()+4 > math.MaxUint16 {
@@ -719,6 +739,9 @@ func (b *RDBuilder) Uint32(val uint32) error {
 	return nil
 }
 
+// Uint64 appends a single uint16 value to the resource data in Big-Endian format.
+//
+// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
 func (b *RDBuilder) Uint64(val uint64) error {
 	b.isCallValid()
 	if b.Length()+8 > math.MaxUint16 {
@@ -729,7 +752,11 @@ func (b *RDBuilder) Uint64(val uint64) error {
 	return nil
 }
 
-func (b *Builder) RDBUilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
+// RDBuilder craeates a new [RDBuilder], used for building custom resource data.
+//
+// Note: The returned RDBuilder should not be used after creating any new resource in b.
+// Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
+func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
 	hdr.Length = 0
 	f, err := b.appendHeaderWithLengthFixup(hdr)
 	if err != nil {
