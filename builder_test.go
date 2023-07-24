@@ -185,7 +185,7 @@ func BenchmarkBuilderAppendNameSameName(b *testing.B) {
 		b := nameBuilderState{}
 		rawName := mustNewRawNameValid("www.example.com")
 		for i := 0; i < 31; i++ {
-			buf = b.appendName(buf, 0, rawName, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, rawName, true)
 		}
 	}
 }
@@ -201,11 +201,11 @@ func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
 		raw2 := mustNewRawNameValid("example.com")
 		raw3 := mustNewRawNameValid("com")
 
-		buf = b.appendName(buf, 0, raw1, true)
+		buf, _ = b.appendName(buf, math.MaxInt, 0, raw1, true)
 		for i := 0; i < 10; i++ {
-			buf = b.appendName(buf, 0, raw1, true)
-			buf = b.appendName(buf, 0, raw2, true)
-			buf = b.appendName(buf, 0, raw3, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw1, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw2, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw3, true)
 		}
 	}
 }
@@ -217,14 +217,14 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		nb.reset()
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("www.example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("dfd.www.example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
-		buf = nb.appendName(buf, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
 	}
 }
 
@@ -246,7 +246,7 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable16Names(b *testing.B
 		builder.reset()
 		buf := buf
 		for _, v := range names {
-			buf = builder.appendName(buf, 0, mustNewRawNameValid(v), true)
+			buf, _ = builder.appendName(buf, math.MaxInt, 0, mustNewRawNameValid(v), true)
 		}
 	}
 }
@@ -261,7 +261,8 @@ func TestAppendName(t *testing.T) {
 			name: "one name",
 			build: func() []byte {
 				b := nameBuilderState{}
-				return b.appendName(make([]byte, headerLen), 0, MustNewRawName("example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("example.com."), true)
+				return buf
 			},
 			expect: append(
 				make([]byte, headerLen),
@@ -273,10 +274,11 @@ func TestAppendName(t *testing.T) {
 			name: "four same names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("example.com."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
-				return b.appendName(buf, 0, MustNewRawName("example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				return buf
 			},
 			expect: append(
 				make([]byte, headerLen),
@@ -291,9 +293,10 @@ func TestAppendName(t *testing.T) {
 			name: "three compressable names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("com."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
-				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
 			},
 			expect: append(
 				make([]byte, headerLen),
@@ -307,10 +310,11 @@ func TestAppendName(t *testing.T) {
 			name: "first root name followed by three compressable names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("com."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("example.com."), true)
-				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
 			},
 			expect: append(
 				make([]byte, headerLen),
@@ -324,9 +328,139 @@ func TestAppendName(t *testing.T) {
 			name: "compress=false",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf := b.appendName(make([]byte, headerLen), 0, MustNewRawName("com."), true)
-				buf = b.appendName(buf, 0, MustNewRawName("example.com."), false)
-				return b.appendName(buf, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 0xC0, 17,
+			),
+		},
+		{
+			name: "maxBufSize on first name",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					// TODO: don't panic here.
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				if err != ErrTruncated {
+					panic(err)
+				}
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				0xC0, 12,
+				0xC0, 12,
+			),
+		},
+		{
+			name: "maxBufSize",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					// TODO: don't panic here.
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 30, 0, MustNewRawName("www.example.com."), true)
+				if err != ErrTruncated {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 128, 0, MustNewRawName("www.example.com."), true)
+				if err != nil {
+					panic(err)
+				}
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				0xC0, 12,
+				3, 'w', 'w', 'w', 0xC0, 12,
+			),
+		},
+		{
+			name: "maxBufSize entire not compressed second name",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				if err != nil {
+					// TODO: don't panic here.
+					panic(err)
+				}
+				n := MustNewRawName("example.net.")
+				buf, err = b.appendName(buf, len(buf)+len(n)-1, 0, n, true)
+				if err != ErrTruncated {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 128, 0, MustNewRawName("www.example.net"), true)
+				if err != nil {
+					panic(err)
+				}
+				buf, err = b.appendName(buf, 128, 0, n, true)
+				if err != nil {
+					panic(err)
+				}
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'n', 'e', 't', 0,
+				0xC0, 29,
+			),
+		},
+		{
+			name: "first name, removeNamesFromCompressionMap",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
+				b.removeNamesFromCompressionMap(0, headerLen)
+				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 0xC0, 17,
+			),
+		},
+		{
+			name: "after first name, removeNamesFromCompressionMap",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
+				offset := len(buf)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				b.removeNamesFromCompressionMap(0, offset)
+				buf = buf[:offset]
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
 			},
 			expect: append(
 				make([]byte, headerLen),
@@ -346,32 +480,41 @@ func TestAppendName(t *testing.T) {
 }
 
 type testName struct {
-	name     string
-	compress bool
+	name                 string
+	incMaxBufLen         uint16
+	removeLastNamesCount uint16
+	compress             bool
 }
 
 func randStringNames(rand []byte) []testName {
 	var out []testName
-	for len(rand) >= 5 {
-		chars := int(binary.BigEndian.Uint16(rand[:4]))
-		if chars > len(rand[5:]) {
-			chars = len(rand[5:])
+	for len(rand) >= 9 {
+		nameCharCount := int(binary.BigEndian.Uint32(rand[5:9]))
+		if nameCharCount > len(rand[9:]) {
+			nameCharCount = len(rand[9:])
 		}
-		out = append(out, testName{string(rand[5 : 5+chars]), rand[4] < 127})
-		rand = rand[5+chars:]
+		out = append(out, testName{
+			name:                 string(rand[9 : 9+nameCharCount]),
+			incMaxBufLen:         binary.BigEndian.Uint16(rand[0:2]),
+			removeLastNamesCount: binary.BigEndian.Uint16(rand[2:4]),
+			compress:             rand[5] < 127,
+		})
+		rand = rand[9+nameCharCount:]
 	}
 	return out
 }
 
-func testAppendCompressed(buf []byte, compression map[string]uint16, name RawName, compress bool) []byte {
+func testAppendCompressed(buf []byte, maxBufSize int, compression map[string]uint16, name RawName, compress bool) ([]byte, error) {
 	if len(buf) < headerLen {
 		panic("invalid use of testAppendCompressed")
 	}
 
+	compressFirstName := true
+
 	// The nameBuilderState has an optimization (only for the first name),
 	// that as a side effect allows compressing not only on label length boundry.
 	defer func(bufStartLength int) {
-		if bufStartLength == headerLen {
+		if compressFirstName && bufStartLength == headerLen {
 			for i := 0; i < len(name)-1; i++ {
 				compression[string(name[i:])] = uint16(bufStartLength + i)
 			}
@@ -381,16 +524,53 @@ func testAppendCompressed(buf []byte, compression map[string]uint16, name RawNam
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
 		ptr, ok := compression[string(name[i:])]
 		if compress && ok {
+			if len(buf)+i+2 > maxBufSize {
+				for j := 0; j < i; j += int(name[j]) + 1 {
+					delete(compression, string(name[j:]))
+				}
+				compressFirstName = false
+				return buf, ErrTruncated
+			}
 			buf = append(buf, name[:i]...)
-			return appendUint16(buf, ptr|0xC000)
+			return appendUint16(buf, ptr|0xC000), nil
 		}
 		if !ok && len(buf)+i <= maxPtr {
 			compression[string(name[i:])] = uint16(len(buf) + i)
 		}
 	}
 
-	return append(buf, name...)
+	if len(buf)+len(name) > maxBufSize {
+		for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+			delete(compression, string(name[i:]))
+		}
+		compressFirstName = false
+		return buf, ErrTruncated
+	}
+	return append(buf, name...), nil
 }
+
+func testRemoveLastlyCompressedName(msg []byte, compression map[string]uint16, headerStartOffset int, nameOffset int, name []byte) {
+	if nameOffset == headerLen+headerStartOffset {
+		for i := 0; i < len(name)-1; i++ {
+			ptr, ok := compression[string(name[i:])]
+			if ok && int(ptr) >= nameOffset {
+				delete(compression, string(name[i:]))
+			}
+		}
+		if len(compression) != 0 {
+			panic("len(compression) != 0")
+		}
+	} else {
+		for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+			ptr, ok := compression[string(name[i:])]
+			if ok && int(ptr) >= nameOffset {
+				delete(compression, string(name[i:]))
+			}
+		}
+	}
+}
+
+const debugFuzz = false
 
 func FuzzAppendName(f *testing.F) {
 	f.Fuzz(func(t *testing.T, rand []byte) {
@@ -400,26 +580,193 @@ func FuzzAppendName(f *testing.F) {
 			if err != nil {
 				return
 			}
-			encoding := ""
-			for i := 0; i < len(n); i += int(n[i]) + 1 {
-				if i != 0 {
-					encoding += "\n"
+			if debugFuzz {
+				encoding := ""
+				for i := 0; i < len(n); i += int(n[i]) + 1 {
+					if i != 0 {
+						encoding += "\n"
+					}
+					encoding += fmt.Sprintf("%v %v", n[i], n[i+1:i+1+int(n[i])])
 				}
-				encoding += fmt.Sprintf("%v %v", n[i], n[i+1:i+1+int(n[i])])
+				t.Logf(
+					"\nname %#v:\nincMaxBufLen: %v\nremoveLastNamesCount: %v\ncompress: %v\nencoding:\n%v",
+					name.name, name.incMaxBufLen, name.removeLastNamesCount, name.compress, encoding,
+				)
 			}
-			t.Logf("\nname %#v:\ncompress: %v\nencoding:\n%v", name.name, name.compress, encoding)
+		}
+
+		var (
+			expect      = make([]byte, headerLen, 1024)
+			maxBufSize  = len(expect)
+			compression = make(map[string]uint16)
+		)
+
+		var nameOffsets []int
+		var appendedNames []string
+
+		if debugFuzz {
+			t.Logf("appending name to expect slice: %v", expect)
+		}
+
+		for i, name := range names {
+			maxBufSize += int(name.incMaxBufLen)
+
+			if debugFuzz {
+				t.Logf("%v: name: %#v", i, name.name)
+				t.Logf("%v: len(expect) = %v, maxBufSize: %v", i, len(expect), maxBufSize)
+			}
+
+			var err error
+			offset := len(expect)
+			expect, err = testAppendCompressed(expect, maxBufSize, compression, MustNewRawName(name.name), name.compress)
+
+			if debugFuzz {
+				t.Logf("%v: offset: %v, buf: %v, err: %v", i, offset, expect, err)
+			}
+
+			if err != nil && len(expect) != offset {
+				t.Fatal("buf size changed")
+			}
+
+			for _, ptr := range compression {
+				if int(ptr) >= len(expect) {
+					t.Fatalf("stale entry found in compression map with ptr: %v", ptr)
+				}
+			}
+
+			if len(expect) > maxBufSize {
+				t.Fatalf("len(expect) = %v, len(expect) > maxBufSize", len(expect))
+			}
+
+			if err == nil {
+				nameOffsets = append(nameOffsets, offset)
+				appendedNames = append(appendedNames, name.name)
+			}
+
+			removeLastNamesCount := int(name.removeLastNamesCount)
+			if removeLastNamesCount > len(nameOffsets) {
+				removeLastNamesCount = len(nameOffsets)
+			}
+
+			if debugFuzz {
+				t.Logf("%v: removeLastNamesCount: %v", i, removeLastNamesCount)
+			}
+
+			removeOffsets := nameOffsets[len(nameOffsets)-removeLastNamesCount:]
+			removeNames := appendedNames[len(appendedNames)-removeLastNamesCount:]
+			nameOffsets = nameOffsets[:len(nameOffsets)-removeLastNamesCount]
+			appendedNames = appendedNames[:len(appendedNames)-removeLastNamesCount]
+
+			for j := len(removeOffsets) - 1; j >= 0; j-- {
+				offset := removeOffsets[j]
+				name := removeNames[j]
+				if debugFuzz {
+					t.Logf("%v: removing last name: %#v at offset: %v", i, name, offset)
+				}
+				testRemoveLastlyCompressedName(expect, compression, 0, offset, MustNewRawName(name))
+				expect = expect[:offset]
+				if debugFuzz && j != 0 {
+					t.Logf("%v: buf: %v", i, expect)
+				}
+
+				for _, ptr := range compression {
+					if int(ptr) >= len(expect) {
+						t.Fatalf("stale entry found in compression map with ptr: %v", ptr)
+					}
+				}
+			}
+
+			if debugFuzz {
+				t.Logf("%v: buf: %v", i, expect)
+				t.Log()
+			}
+		}
+
+		p, _, _ := Parse(expect)
+		for p.curOffset != len(p.msg) {
+			expectName := appendedNames[0]
+			appendedNames = appendedNames[1:]
+
+			expectedNameOffset := nameOffsets[0]
+			nameOffsets = nameOffsets[1:]
+
+			name, n, err := p.unpackName(p.curOffset)
+			if err != nil {
+				t.Fatalf("failed to unpack name at offset: %v: %v", p.curOffset, err)
+			}
+			if !name.EqualName(MustNewName(expectName)) {
+				t.Fatalf("name at offset: %v, is not euqal to: %#v", p.curOffset, expectName)
+			}
+			if expectedNameOffset != p.curOffset {
+				t.Fatalf("name at offset: %v, was expected to be at: %v offset", p.curOffset, expectedNameOffset)
+			}
+			p.curOffset += int(n)
 		}
 
 		got := make([]byte, headerLen, 1024)
 		b := nameBuilderState{}
-		for _, name := range names {
-			got = b.appendName(got, 0, MustNewRawName(name.name), name.compress)
-		}
+		nameOffsets = nil
+		appendedNames = nil
+		maxBufSize = len(got)
 
-		expect := make([]byte, headerLen, 1024)
-		compession := make(map[string]uint16)
-		for _, name := range names {
-			expect = testAppendCompressed(expect, compession, MustNewRawName(name.name), name.compress)
+		if debugFuzz {
+			t.Logf("appending name to got slice: %v", got)
+		}
+		for i, name := range names {
+			maxBufSize += int(name.incMaxBufLen)
+			if debugFuzz {
+				t.Logf("%v: name: %#v", i, name.name)
+				t.Logf("%v: len(got) = %v, maxBufSize: %v", i, len(got), maxBufSize)
+			}
+
+			var err error
+			offset := len(got)
+			got, err = b.appendName(got, maxBufSize, 0, MustNewRawName(name.name), name.compress)
+			if debugFuzz {
+				t.Logf("%v: offset: %v, buf: %v, err: %v", i, offset, got, err)
+			}
+
+			if err != nil && len(got) != offset {
+				t.Fatal("buf size changed")
+			}
+
+			if err == nil {
+				nameOffsets = append(nameOffsets, offset)
+				appendedNames = append(appendedNames, name.name)
+			}
+
+			removeLastNamesCount := int(name.removeLastNamesCount)
+			if removeLastNamesCount > len(nameOffsets) {
+				removeLastNamesCount = len(nameOffsets)
+			}
+
+			if debugFuzz {
+				t.Logf("%v: removeLastNamesCount: %v", i, removeLastNamesCount)
+			}
+
+			removeOffsets := nameOffsets[len(nameOffsets)-removeLastNamesCount:]
+			removeNames := appendedNames[len(appendedNames)-removeLastNamesCount:]
+			nameOffsets = nameOffsets[:len(nameOffsets)-removeLastNamesCount]
+			appendedNames = appendedNames[:len(appendedNames)-removeLastNamesCount]
+
+			for j := len(removeOffsets) - 1; j >= 0; j-- {
+				offset := removeOffsets[j]
+				name := removeNames[j]
+
+				if debugFuzz {
+					t.Logf("%v: removing last name: %#v at offset: %v", i, name, offset)
+				}
+				b.removeNamesFromCompressionMap(0, offset)
+				got = got[:offset]
+				if debugFuzz && j != 0 {
+					t.Logf("%v: buf: %v", i, got)
+				}
+			}
+
+			if debugFuzz {
+				t.Logf("%v: buf: %v", i, got)
+				t.Log()
+			}
 		}
 
 		if !bytes.Equal(got, expect) {

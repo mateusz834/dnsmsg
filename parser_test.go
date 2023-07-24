@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 	"testing"
@@ -196,10 +197,10 @@ func TestUnpackNameCompressionPtrLoop(t *testing.T) {
 			name[j] = 1
 			name[j+1] = 'a'
 		}
-		buf = nb.appendName(buf, 0, name, true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, name, true)
 		// append the longest name twice, so that it is also compressed directly.
 		if len(name) == maxEncodedNameLen {
-			buf = nb.appendName(buf, 0, name, true)
+			buf, _ = nb.appendName(buf, math.MaxInt, 0, name, true)
 		}
 	}
 

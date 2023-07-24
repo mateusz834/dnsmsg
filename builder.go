@@ -7,6 +7,19 @@ import (
 	"math"
 )
 
+var (
+	// ErrTruncated is an error returned by [Builder] when appending questions or resources to the message
+	// is not possible due to reaching the maximum size limit set by [Builder.LimitMessageSize].
+	// When this error occurs, it indicates that the total size of the DNS message, has reached or exceeded
+	// the specified size limit.
+	//
+	// The DNS message, upon encountering the ErrTruncated error, remains valid, and shorter resources can still be appended
+	// to the message. The error serves as a notification that the message has reached its size limit and indicates that the
+	// application may need to handle this condition appropriately. Two common approaches to handle this situation
+	// include setting the TC (Truncated) bit or sending fewer resources (RFC 2181, Section 9).
+	ErrTruncated = errors.New("message size limit reached")
+)
+
 func MakeQuery[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T]) []byte {
 	// Header
 	msg = appendUint16(msg, id)
@@ -449,6 +462,7 @@ type Builder struct {
 	nb  nameBuilderState
 
 	headerStartOffset int
+	maxBufSize        int
 
 	curSection section
 	hdr        Header
@@ -460,11 +474,23 @@ func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	return Builder{
 		headerStartOffset: len(buf),
 		buf:               append(buf, make([]byte, headerLen)...),
+		maxBufSize:        math.MaxInt,
 		hdr: Header{
 			ID:    id,
 			Flags: flags,
 		},
 	}
+}
+
+// LimitMessageSize sets the upper limit on the size of the DNS message that can be built using the Builder.
+// It allows you to restrict the message size to a specified value, preventing it from exceeding the threshold.
+// If the total size of the message reaches or exceeds the given size, any subsequent appending
+// of questions or resources will result in an error [ErrTruncated]. Despite encountering the [ErrTruncated] error,
+// the DNS message remains valid, and shorter resources can still be appended.
+//
+// Note: The message size will not be reduced if it is already larger than the specified limit.
+func (b *Builder) LimitMessageSize(size int) {
+	b.maxBufSize = b.headerStartOffset + size
 }
 
 // Reset restes the DNS builder.
@@ -484,7 +510,6 @@ func (b *Builder) Bytes() []byte {
 	b.hdr.pack((*[12]byte)(b.buf[b.headerStartOffset:]))
 	return b.buf
 }
-
 
 // StartAnswers changes the building section from question to answers.
 //
@@ -518,17 +543,6 @@ func (b *Builder) StartAdditionals() {
 
 var errResourceCountLimitReached = errors.New("maximum amount of DNS resources/questions reached")
 
-func (b *Builder) incQuestionSection() error {
-	if b.curSection != sectionQuestions {
-		panic("invalid section")
-	}
-	if b.hdr.QDCount == math.MaxUint16 {
-		return errResourceCountLimitReached
-	}
-	b.hdr.QDCount++
-	return nil
-}
-
 func (b *Builder) incResurceSection() error {
 	var count *uint16
 	switch b.curSection {
@@ -549,17 +563,39 @@ func (b *Builder) incResurceSection() error {
 	return nil
 }
 
+func (b *Builder) decResurceSection() {
+	switch b.curSection {
+	case sectionAnswers:
+		b.hdr.ANCount--
+	case sectionAuthorities:
+		b.hdr.NSCount--
+	case sectionAdditionals:
+		b.hdr.ARCount--
+	}
+}
+
 // Question appends a single question.
 // It errors when the amount of questions is equal to 65535.
 //
 // The building section must be set to questions, otherwise it panics.
 func (b *Builder) Question(q Question[RawName]) error {
-	if err := b.incQuestionSection(); err != nil {
+	if b.curSection != sectionQuestions {
+		panic("invalid section")
+	}
+
+	if b.hdr.QDCount == math.MaxUint16 {
+		return errResourceCountLimitReached
+	}
+
+	var err error
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-4, b.headerStartOffset, q.Name, true)
+	if err != nil {
 		return err
 	}
-	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, q.Name, true)
 	b.buf = appendUint16(b.buf, uint16(q.Type))
 	b.buf = appendUint16(b.buf, uint16(q.Class))
+
+	b.hdr.QDCount++
 	return nil
 }
 
@@ -569,7 +605,7 @@ func (b *Builder) Question(q Question[RawName]) error {
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 	hdr.Length = 4
-	if err := b.appendHeader(hdr); err != nil {
+	if err := b.appendHeader(hdr, b.maxBufSize-4); err != nil {
 		return err
 	}
 	b.buf = append(b.buf, a.A[:]...)
@@ -582,7 +618,7 @@ func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
 	hdr.Length = 16
-	if err := b.appendHeader(hdr); err != nil {
+	if err := b.appendHeader(hdr, b.maxBufSize-16); err != nil {
 		return err
 	}
 	b.buf = append(b.buf, aaaa.AAAA[:]...)
@@ -594,11 +630,15 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
-	f, err := b.appendHeaderWithLengthFixup(hdr)
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
 	}
-	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, cname.CNAME, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, cname.CNAME, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
 	f.fixup(b)
 	return nil
 }
@@ -608,12 +648,16 @@ func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
-	f, err := b.appendHeaderWithLengthFixup(hdr)
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize-2)
 	if err != nil {
 		return err
 	}
 	b.buf = appendUint16(b.buf, mx.Pref)
-	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, mx.MX, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, mx.MX, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
 	f.fixup(b)
 	return nil
 }
@@ -630,7 +674,7 @@ func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT
 	}
 
 	hdr.Length = uint16(len(txt.TXT))
-	if err := b.appendHeader(hdr); err != nil {
+	if err := b.appendHeader(hdr, b.maxBufSize-len(txt.TXT)); err != nil {
 		return err
 	}
 	b.buf = append(b.buf, txt.TXT...)
@@ -657,7 +701,7 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 	}
 
 	hdr.Length = uint16(totalLength)
-	if err := b.appendHeader(hdr); err != nil {
+	if err := b.appendHeader(hdr, b.maxBufSize-totalLength); err != nil {
 		return err
 	}
 
@@ -669,11 +713,16 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 	return nil
 }
 
-func (b *Builder) appendHeader(hdr ResourceHeader[RawName]) error {
+func (b *Builder) appendHeader(hdr ResourceHeader[RawName], maxBufSize int) error {
 	if err := b.incResurceSection(); err != nil {
 		return err
 	}
-	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, hdr.Name, true)
+	var err error
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	if err != nil {
+		b.decResurceSection()
+		return err
+	}
 	b.buf = appendUint16(b.buf, uint16(hdr.Type))
 	b.buf = appendUint16(b.buf, uint16(hdr.Class))
 	b.buf = appendUint32(b.buf, hdr.TTL)
@@ -695,16 +744,28 @@ func (f headerLengthFixup) currentlyStoredLength(b *Builder) uint16 {
 	return unpackUint16(b.buf[f-2:])
 }
 
-func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (headerLengthFixup, error) {
-	if err := b.incResurceSection(); err != nil {
-		return 0, err
+func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName], maxBufSize int) (headerLengthFixup, int, error) {
+	err := b.incResurceSection()
+	if err != nil {
+		return 0, 0, err
 	}
-	b.buf = b.nb.appendName(b.buf, b.headerStartOffset, hdr.Name, true)
+	nameOffset := len(b.buf)
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	if err != nil {
+		b.decResurceSection()
+		return 0, 0, err
+	}
 	b.buf = appendUint16(b.buf, uint16(hdr.Type))
 	b.buf = appendUint16(b.buf, uint16(hdr.Class))
 	b.buf = appendUint32(b.buf, hdr.TTL)
 	b.buf = appendUint16(b.buf, hdr.Length)
-	return headerLengthFixup(len(b.buf)), nil
+	return headerLengthFixup(len(b.buf)), nameOffset, nil
+}
+
+func (b *Builder) removeResourceHeader(headerOffset int) {
+	b.nb.removeNamesFromCompressionMap(b.headerStartOffset, headerOffset)
+	b.buf = b.buf[:headerOffset]
+	b.decResurceSection()
 }
 
 // RDParser is a resource data builder used to build custom resources.
@@ -712,8 +773,9 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName]) (head
 // Note: The returned RDBuilder should not be used after creating any new resource in the [Builder].
 // Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
 type RDBuilder struct {
-	b     *Builder
-	fixup headerLengthFixup
+	b         *Builder
+	fixup     headerLengthFixup
+	hdrOffset int
 }
 
 func (b *RDBuilder) isCallValid() {
@@ -730,28 +792,51 @@ func (b *RDBuilder) Length() int {
 	return b.fixup.rDataLength(b.b)
 }
 
+// Remove removes the resource from the message.
+func (b *RDBuilder) Remove() {
+	b.isCallValid()
+	b.b.removeResourceHeader(b.hdrOffset)
+}
+
 // Name appends a DNS name to the resource data.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Name(name RawName, compress bool) error {
 	b.isCallValid()
-	before := b.b.buf
-	b.b.buf = b.b.nb.appendName(b.b.buf, b.b.headerStartOffset, name, compress)
+
+	nameOffset := len(b.b.buf)
+	var err error
+	b.b.buf, err = b.b.nb.appendName(b.b.buf, b.b.maxBufSize, b.b.headerStartOffset, name, compress)
+	if err != nil {
+		return err
+	}
+
 	if b.fixup.rDataLength(b.b) > math.MaxUint16 {
-		b.b.buf = before
+		b.b.nb.removeNamesFromCompressionMap(b.b.headerStartOffset, nameOffset)
+		b.b.buf = b.b.buf[:nameOffset]
 		return errResourceTooLong
 	}
+
 	b.fixup.fixup(b.b)
 	return nil
 }
 
 // Bytes appends a raw byte slice to the resource data.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Bytes(raw []byte) error {
 	b.isCallValid()
 	if b.Length()+len(raw) > math.MaxUint16 {
 		return errResourceTooLong
+	}
+	if len(b.b.buf)+len(raw) > b.b.maxBufSize {
+		return ErrTruncated
 	}
 	b.b.buf = append(b.b.buf, raw...)
 	b.fixup.fixup(b.b)
@@ -760,11 +845,17 @@ func (b *RDBuilder) Bytes(raw []byte) error {
 
 // Uint8 appends a single uint8 value to the resource data.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint8(val uint8) error {
 	b.isCallValid()
 	if b.Length()+1 > math.MaxUint16 {
 		return errResourceTooLong
+	}
+	if len(b.b.buf)+1 > b.b.maxBufSize {
+		return ErrTruncated
 	}
 	b.b.buf = append(b.b.buf, val)
 	b.fixup.fixup(b.b)
@@ -773,11 +864,17 @@ func (b *RDBuilder) Uint8(val uint8) error {
 
 // Uint16 appends a single uint16 value to the resource data in Big-Endian format.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint16(val uint16) error {
 	b.isCallValid()
 	if b.Length()+2 > math.MaxUint16 {
 		return errResourceTooLong
+	}
+	if len(b.b.buf)+2 > b.b.maxBufSize {
+		return ErrTruncated
 	}
 	b.b.buf = appendUint16(b.b.buf, val)
 	b.fixup.fixup(b.b)
@@ -786,11 +883,17 @@ func (b *RDBuilder) Uint16(val uint16) error {
 
 // Uint32 appends a single uint16 value to the resource data in Big-Endian format.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint32(val uint32) error {
 	b.isCallValid()
 	if b.Length()+4 > math.MaxUint16 {
 		return errResourceTooLong
+	}
+	if len(b.b.buf)+4 > b.b.maxBufSize {
+		return ErrTruncated
 	}
 	b.b.buf = appendUint32(b.b.buf, val)
 	b.fixup.fixup(b.b)
@@ -799,11 +902,17 @@ func (b *RDBuilder) Uint32(val uint32) error {
 
 // Uint64 appends a single uint16 value to the resource data in Big-Endian format.
 //
-// An error is returned if the resource data exceeds the maximum allowed size of 64 KiB.
+// If the resource data exceeds the maximum allowed size of 64 KiB or the message limit size
+// is reached ([Builder.LimitMessageSize]), an error will be returned.
+// Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
+// The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint64(val uint64) error {
 	b.isCallValid()
 	if b.Length()+8 > math.MaxUint16 {
 		return errResourceTooLong
+	}
+	if len(b.b.buf)+8 > b.b.maxBufSize {
+		return ErrTruncated
 	}
 	b.b.buf = appendUint64(b.b.buf, val)
 	b.fixup.fixup(b.b)
@@ -819,13 +928,14 @@ func (b *RDBuilder) Uint64(val uint64) error {
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
 	hdr.Length = 0
-	f, err := b.appendHeaderWithLengthFixup(hdr)
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return RDBuilder{}, err
 	}
 	return RDBuilder{
-		b:     b,
-		fixup: f,
+		b:         b,
+		fixup:     f,
+		hdrOffset: hdrOffset,
 	}, nil
 }
 
@@ -860,11 +970,16 @@ func (m *entry) fill(f fingerprint, ptr uint16) {
 	*m = entry(uint32(f)<<ptrBits | uint32(ptr))
 }
 
+func (m *entry) clear() {
+	*m = 0
+}
+
 type nameBuilderState struct {
-	entries         []entry
-	available       int
-	seed            maphash.Seed
-	firstNameLength uint8
+	entries          []entry
+	available        int
+	seed             maphash.Seed
+	invalidPtrsAfter uint16
+	firstNameLength  uint8
 }
 
 func (c *nameBuilderState) reset() {
@@ -875,26 +990,53 @@ func (c *nameBuilderState) reset() {
 	c.firstNameLength = 0
 }
 
-func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []byte, compress bool) []byte {
+func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffset int, name []byte, compress bool) ([]byte, error) {
 	if m.firstNameLength == 0 {
+		if len(msg)+len(name) > msgSizeLimit {
+			return msg, ErrTruncated
+		}
 		m.firstNameLength = uint8(len(name))
-		return append(msg, name...)
+		return append(msg, name...), nil
 	}
 
 	if len(name) == 1 {
-		return append(msg, 0)
+		if len(msg)+1 > msgSizeLimit {
+			return msg, ErrTruncated
+		}
+		return append(msg, 0), nil
 	}
 
 	firstName := msg[headerLen+headerStartOffset:][:m.firstNameLength]
 	if compress && bytes.Equal(firstName, name) {
-		return appendUint16(msg, headerLen|0xC000)
+		if len(msg)+2 > msgSizeLimit {
+			return msg, ErrTruncated
+		}
+		return appendUint16(msg, headerLen|0xC000), nil
+	}
+
+	if m.invalidPtrsAfter != 0 {
+		for i := range m.entries {
+			ent := &m.entries[i]
+			if int(ent.ptr()) >= int(m.invalidPtrsAfter) {
+				ent.clear()
+				m.available++
+			}
+		}
+		m.invalidPtrsAfter = 0
 	}
 
 	for i := 0; name[i] != 0; i += int(name[i]) + 1 {
+		if len(msg)+i+2 > msgSizeLimit {
+			if len(msg) <= maxPtr {
+				m.invalidPtrsAfter = uint16(len(msg))
+			}
+			return msg, ErrTruncated
+		}
+
 		startOffset := len(firstName) - len(name[i:])
 		if compress && startOffset >= 0 && bytes.Equal(firstName[startOffset:], name[i:]) {
 			msg = append(msg, name[:i]...)
-			return appendUint16(msg, 0xC000|(headerLen+uint16(startOffset)))
+			return appendUint16(msg, 0xC000|(headerLen+uint16(startOffset))), nil
 		}
 
 		if m.available == 0 {
@@ -932,7 +1074,7 @@ func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []
 
 						if labelLength == 0 {
 							msg = append(msg, name[:i]...)
-							return appendUint16(msg, m.ptr()|0xC000)
+							return appendUint16(msg, m.ptr()|0xC000), nil
 						}
 
 						msgNameIndex++
@@ -956,7 +1098,24 @@ func (m *nameBuilderState) appendName(msg []byte, headerStartOffset int, name []
 			m.entries[idx].fill(fingerprint, uint16(newPtr))
 		}
 	}
-	return append(msg, name...)
+
+	if len(msg)+len(name) > msgSizeLimit {
+		if len(msg) <= maxPtr {
+			m.invalidPtrsAfter = uint16(len(msg))
+		}
+		return msg, ErrTruncated
+	}
+	return append(msg, name...), nil
+}
+
+func (m *nameBuilderState) removeNamesFromCompressionMap(headerStartOffset, namesStartOffset int) {
+	if namesStartOffset == headerLen+headerStartOffset {
+		m.firstNameLength = 0
+		return
+	}
+	if namesStartOffset <= maxPtr {
+		m.invalidPtrsAfter = uint16(namesStartOffset)
+	}
 }
 
 func (m *nameBuilderState) grow(msg, name []byte) {
