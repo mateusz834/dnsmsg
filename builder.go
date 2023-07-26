@@ -987,6 +987,7 @@ func (c *nameBuilderState) reset() {
 		c.entries[i] = 0
 	}
 	c.available = len(c.entries)
+	c.invalidPtrsAfter = 0
 	c.firstNameLength = 0
 }
 
