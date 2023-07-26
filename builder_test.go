@@ -1227,3 +1227,123 @@ func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 		t.Fatal("message modified after rb.Uint8()")
 	}
 }
+
+func TestBuilderReset(t *testing.T) {
+	b := StartBuilder(make([]byte, 0, 128), 0, 0)
+	b.LimitMessageSize(90)
+	hdr := ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  TypeA,
+		Class: ClassIN,
+	}
+
+	b.StartAnswers()
+	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	b.StartAuthorities()
+	hdr.Name = MustNewRawName("www.example.com")
+	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	b.StartAdditionals()
+	hdr.Name = MustNewRawName("smtp.example.com")
+	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	hdr.Name = MustNewRawName("internal.example.com")
+	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != ErrTruncated {
+		t.Fatalf("b.ResourceA() returned error: %v, want: %v", err, ErrTruncated)
+	}
+
+	b.Reset(make([]byte, 0, 128), 0, 0)
+
+	b.StartAnswers()
+	hdr.Type = TypeAAAA
+	hdr.Name = MustNewRawName("internal.example.com")
+	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	b.StartAuthorities()
+	hdr.Name = MustNewRawName("www.example.com")
+	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	b.StartAdditionals()
+	hdr.Name = MustNewRawName("example.com")
+	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+	hdr.Type = TypeA
+	hdr.Name = MustNewRawName("www.admin.internal.example.net")
+	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
+		t.Fatalf("b.ResourceA() returned error: %v", err)
+	}
+
+	p, _, err := Parse(b.Bytes())
+	if err != nil {
+		t.Fatalf("Parse() returned error: %v", err)
+	}
+
+	if err := p.StartAnswers(); err != nil {
+		t.Fatalf("p.StartAnswers() returned error: %v", err)
+	}
+
+	hdr1, err := p.ResourceHeader()
+	if err != nil {
+		t.Fatalf("p.ResourceHeader() returned error: %v", err)
+	}
+
+	if !hdr1.Name.EqualName(MustNewName("internal.example.com")) {
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("internal.example.com")) = false, want: true`, hdr1.Name.String())
+	}
+
+	if _, err := p.ResourceAAAA(); err != nil {
+		t.Fatalf("p.ResourceAAAA() returned error: %v", err)
+	}
+
+	p.StartAuthorities()
+	hdr2, err := p.ResourceHeader()
+	if err != nil {
+		t.Fatalf("p.ResourceHeader() returned error: %v", err)
+	}
+
+	if !hdr2.Name.EqualName(MustNewName("www.example.com")) {
+		t.Fatalf(`hdr2.Name = %v, hdr2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, hdr2.Name.String())
+	}
+
+	if _, err := p.ResourceAAAA(); err != nil {
+		t.Fatalf("p.ResourceAAAA() returned error: %v", err)
+	}
+
+	p.StartAdditionals()
+	hdr3, err := p.ResourceHeader()
+	if err != nil {
+		t.Fatalf("p.ResourceHeader() returned error: %v", err)
+	}
+
+	if !hdr3.Name.EqualName(MustNewName("example.com")) {
+		t.Fatalf(`hdr3.Name = %v, hdr3.Name.EqualName(MustNewName("example.com")) = false, want: true`, hdr3.Name.String())
+	}
+
+	if _, err := p.ResourceAAAA(); err != nil {
+		t.Fatalf("p.ResourceAAAA() returned error: %v", err)
+	}
+
+	hdr4, err := p.ResourceHeader()
+	if err != nil {
+		t.Fatalf("p.ResourceHeader() returned error: %v", err)
+	}
+
+	if !hdr4.Name.EqualName(MustNewName("www.admin.internal.example.net")) {
+		t.Fatalf(`hdr4.Name = %v, hdr4.Name.EqualName(MustNewName("www.admin.internal.example.net")) = false, want: true`, hdr4.Name.String())
+	}
+
+	if _, err := p.ResourceA(); err != nil {
+		t.Fatalf("p.ResourceA() returned error: %v", err)
+	}
+
+	if err := p.End(); err != nil {
+		t.Fatalf("p.End() returned error: %v", err)
+	}
+}
