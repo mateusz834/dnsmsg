@@ -1230,7 +1230,16 @@ func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 
 func TestBuilderReset(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
-	b.LimitMessageSize(90)
+	b.LimitMessageSize(100)
+
+	if err := b.Question(Question[RawName]{
+		Name:  MustNewRawName("example.net"),
+		Type:  TypeA,
+		Class: ClassIN,
+	}); err != nil {
+		t.Fatalf("b.Question() returned error: %v", err)
+	}
+
 	hdr := ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
 		Type:  TypeA,
@@ -1257,6 +1266,14 @@ func TestBuilderReset(t *testing.T) {
 	}
 
 	b.Reset(make([]byte, 0, 128), 0, 0)
+
+	if err := b.Question(Question[RawName]{
+		Name:  MustNewRawName("www.example.net"),
+		Type:  TypeA,
+		Class: ClassIN,
+	}); err != nil {
+		t.Fatalf("b.Question() returned error: %v", err)
+	}
 
 	b.StartAnswers()
 	hdr.Type = TypeAAAA
@@ -1285,6 +1302,23 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("Parse() returned error: %v", err)
 	}
 
+	q, err := p.Question()
+	if err != nil {
+		t.Fatalf("p.Question() returned error: %v", err)
+	}
+
+	if !q.Name.EqualName(MustNewName("www.example.net")) {
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("www.example.net")) = false, want: true`, q.Name.String())
+	}
+
+	if q.Class != ClassIN {
+		t.Fatalf("q.Class = %v, want: %v", q.Class, ClassIN)
+	}
+
+	if q.Type != TypeA {
+		t.Fatalf("q.Type = %v, want: %v", q.Type, TypeA)
+	}
+
 	if err := p.StartAnswers(); err != nil {
 		t.Fatalf("p.StartAnswers() returned error: %v", err)
 	}
@@ -1296,6 +1330,14 @@ func TestBuilderReset(t *testing.T) {
 
 	if !hdr1.Name.EqualName(MustNewName("internal.example.com")) {
 		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("internal.example.com")) = false, want: true`, hdr1.Name.String())
+	}
+
+	if hdr1.Class != ClassIN {
+		t.Fatalf("hdr1.Class = %v, want: %v", hdr1.Class, ClassIN)
+	}
+
+	if hdr1.Type != TypeAAAA {
+		t.Fatalf("hdr1.Type = %v, want: %v", hdr1.Type, TypeAAAA)
 	}
 
 	if _, err := p.ResourceAAAA(); err != nil {
