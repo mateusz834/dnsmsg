@@ -785,8 +785,53 @@ func TestBuilder(t *testing.T) {
 	f.SetBit(BitAD, true)
 	f.SetResponse()
 
+	expectHeader := Header{
+		ID:    id,
+		Flags: f,
+	}
+
 	startLength := 128
 	b := StartBuilder(make([]byte, startLength, 1024), id, f)
+
+	testAfterAppend := func(name string) {
+		switch name {
+		case "Questions":
+			expectHeader.QDCount++
+		case "Answers":
+			expectHeader.ANCount++
+		case "Authorities":
+			expectHeader.NSCount++
+		case "Additionals":
+			expectHeader.ARCount++
+		default:
+			panic("unknown section: " + name)
+		}
+
+		if hdr := b.Header(); hdr != expectHeader {
+			t.Fatalf("%v section, unexpected header: %#v, want: %#v", name, hdr, expectHeader)
+		}
+
+		length := b.Length()
+		msg := b.Bytes()
+		if len(msg)-startLength != length {
+			t.Fatalf("%v section, b.Length() = %v, want: %v", name, length, len(msg)-startLength)
+		}
+
+		_, hdr, err := Parse(msg[startLength:])
+		if err != nil {
+			t.Fatalf("%v, section, Parse(msg) returned error: %v", name, err)
+		}
+
+		if hdr != expectHeader {
+			t.Fatalf("%v section, Parse(msg) unexpected header: %#v, want: %#v", name, hdr, expectHeader)
+		}
+
+		expectHeader.ID += uint16(b.Length())
+		b.SetID(expectHeader.ID)
+		expectHeader.Flags += Flags(len(msg))
+		b.SetFlags(expectHeader.Flags)
+	}
+
 	err := b.Question(Question[RawName]{
 		Name:  MustNewRawName("example.com"),
 		Type:  TypeA,
@@ -795,6 +840,8 @@ func TestBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("b.Question() unexpected error: %v", err)
 	}
+
+	testAfterAppend("Questions")
 
 	rhdr := ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
@@ -826,38 +873,47 @@ func TestBuilder(t *testing.T) {
 		resourceMX    = ResourceMX[RawName]{Pref: 54831, MX: MustNewRawName("smtp.example.com")}
 	)
 
-	for _, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
+	sectionNames := []string{"Answers", "Authorities", "Additionals"}
+	for i, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
+		sectionName := sectionNames[i]
 		nextSection()
 
 		rhdr.Type = TypeA
 		rhdr.TTL = 32383739
 		if err := b.ResourceA(rhdr, resourceA); err != nil {
-			t.Fatalf("b.ResourceA() unexpected error: %v", err)
+			t.Fatalf("%v section, b.ResourceA() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
 
 		rhdr.Type = TypeAAAA
 		rhdr.TTL = 3600
 		if err := b.ResourceAAAA(rhdr, resourceAAAA); err != nil {
-			t.Fatalf("b.ResourceAAAA() unexpected error: %v", err)
+			t.Fatalf("%v section, b.ResourceAAAA() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
 
 		rhdr.Type = TypeTXT
 		if err := b.ResourceTXT(rhdr, resourceTXT); err != nil {
-			t.Fatalf("b.ResourceTXT() unexpected error: %v", err)
+			t.Fatalf("%v section, b.ResourceTXT() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
+
 		if err := b.RawResourceTXT(rhdr, rawResourceTXT); err != nil {
-			t.Fatalf("b.RawResourceTXT() unexpected error: %v", err)
+			t.Fatalf("%v section, b.RawResourceTXT() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
 
 		rhdr.Type = TypeCNAME
 		if err := b.ResourceCNAME(rhdr, resourceCNAME); err != nil {
-			t.Fatalf("b.ResourceCNAME() unexpected error: %v", err)
+			t.Fatalf("%v section, b.ResourceCNAME() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
 
 		rhdr.Type = TypeMX
 		if err := b.ResourceMX(rhdr, resourceMX); err != nil {
-			t.Fatalf("b.ResourceMX() unexpected error: %v", err)
+			t.Fatalf("%v section, b.ResourceMX() unexpected error: %v", sectionName, err)
 		}
+		testAfterAppend(sectionName)
 	}
 
 	msg := b.Bytes()
@@ -869,15 +925,6 @@ func TestBuilder(t *testing.T) {
 	p, hdr, err := Parse(msg[startLength:])
 	if err != nil {
 		t.Fatalf("Parse(): unexpected error: %v", err)
-	}
-
-	expectHeader := Header{
-		ID:      id,
-		Flags:   f,
-		QDCount: 1,
-		ANCount: 6,
-		NSCount: 6,
-		ARCount: 6,
 	}
 
 	if hdr != expectHeader {
@@ -928,7 +975,7 @@ func TestBuilder(t *testing.T) {
 		}
 	}
 
-	sectionNames := []string{"Questions", "Answers", "Authorities", "Additionals"}
+	sectionNames = []string{"Questions", "Answers", "Authorities", "Additionals"}
 	for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
 		curSectionName := sectionNames[i+1]
 		if err := nextSection(); err != nil {

@@ -511,6 +511,26 @@ func (b *Builder) Bytes() []byte {
 	return b.buf
 }
 
+// Length returns the number of bytes that have been appended to the DNS message up to this point.
+func (b *Builder) Length() int {
+	return len(b.buf) - b.headerStartOffset
+}
+
+// Header returns the current state of the builder's header.
+func (b *Builder) Header() Header {
+	return b.hdr
+}
+
+// SetID updates the id in the header.
+func (b *Builder) SetID(id uint16) {
+	b.hdr.ID = id
+}
+
+// SetFlags updates the flags in the header.
+func (b *Builder) SetFlags(flags Flags) {
+	b.hdr.Flags = flags
+}
+
 // StartAnswers changes the building section from question to answers.
 //
 // It Panics when the current building section is not questions.
