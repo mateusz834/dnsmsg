@@ -1573,8 +1573,8 @@ func FuzzBuilder(f *testing.F) {
 				if debugFuzz {
 					t.Logf("b.LimitMessageSize(%v)", newSizeLimit)
 				}
-				b.LimitMessageSize(sizeLimit)
 				sizeLimit = newSizeLimit
+				b.LimitMessageSize(sizeLimit)
 			}
 		}
 
@@ -1690,8 +1690,8 @@ func FuzzBuilder(f *testing.F) {
 				}
 
 				if newSizeLimit := sizeLimit + int(r.uint16()); newSizeLimit >= 12 && newSizeLimit >= b.Length() {
-					b.LimitMessageSize(sizeLimit)
 					sizeLimit = newSizeLimit
+					b.LimitMessageSize(sizeLimit)
 				}
 			}
 		}
