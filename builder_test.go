@@ -1436,3 +1436,327 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.End() returned error: %v", err)
 	}
 }
+
+type fuzzRand struct {
+	t    *testing.T
+	rand []byte
+}
+
+func (r *fuzzRand) bool() bool {
+	return r.uint8() > 127
+}
+
+func (r *fuzzRand) uint8() uint8 {
+	if len(r.rand) == 0 {
+		r.t.SkipNow()
+	}
+	val := r.rand[0]
+	r.rand = r.rand[1:]
+	return val
+}
+
+func (r *fuzzRand) uint16() uint16 {
+	if len(r.rand) < 2 {
+		r.t.SkipNow()
+	}
+	val := binary.BigEndian.Uint16(r.rand)
+	r.rand = r.rand[2:]
+	return val
+}
+
+func (r *fuzzRand) uint32() uint32 {
+	if len(r.rand) < 4 {
+		r.t.SkipNow()
+	}
+	val := binary.BigEndian.Uint32(r.rand)
+	r.rand = r.rand[4:]
+	return val
+}
+
+func (r *fuzzRand) arbitraryAmountOfBytes() []byte {
+	count := r.uint32()
+	if int(count) > len(r.rand) {
+		count = uint32(len(r.rand))
+	}
+
+	b := r.rand[:count:count]
+	r.rand = r.rand[count:]
+	return b
+}
+
+func (r *fuzzRand) bytes(n int) []byte {
+	if len(r.rand) < n {
+		return make([]byte, n)
+	}
+	b := r.rand[:n:n]
+	r.rand = r.rand[n:]
+	return b
+}
+
+func (r *fuzzRand) rawName() RawName {
+	n, err := NewRawName(string(r.arbitraryAmountOfBytes()))
+	if err != nil {
+		r.t.SkipNow()
+	}
+	return n
+}
+
+func FuzzBuilder(f *testing.F) {
+	f.Fuzz(func(t *testing.T, rand []byte) {
+		r := fuzzRand{t, rand}
+		start := r.arbitraryAmountOfBytes()
+		additionalAvailCapacity := r.uint16()
+		buf := append(start, make([]byte, additionalAvailCapacity)...)[:len(start)]
+
+		id := r.uint16()
+		flags := r.uint16()
+
+		if debugFuzz {
+			t.Logf("creating builder with len(buf) = %v, cap(buf) = %v, id = %v, flags = %v", len(buf), cap(buf), id, Flags(flags))
+		}
+
+		b := StartBuilder(buf, id, Flags(flags))
+
+		sizeLimit := int(r.uint16())
+		if sizeLimit >= 12 {
+			if debugFuzz {
+				t.Logf("b.LimitMessageSize(%v)", sizeLimit)
+			}
+			b.LimitMessageSize(sizeLimit)
+		}
+
+		for r.bool() {
+			if r.bool() {
+				flags = r.uint16()
+				if debugFuzz {
+					t.Logf("b.SetFlags(%v)", Flags(flags))
+				}
+				b.SetFlags(Flags(flags))
+			}
+			if r.bool() {
+				id = r.uint16()
+				if debugFuzz {
+					t.Logf("b.SetId(%v)", id)
+				}
+				b.SetID(id)
+			}
+
+			beforeLen := b.Length()
+			before := b.Bytes()
+
+			q := Question[RawName]{
+				Name:  r.rawName(),
+				Type:  Type(r.uint16()),
+				Class: Class(r.uint16()),
+			}
+
+			err := b.Question(q)
+			if err != nil {
+				if err == errResourceCountLimitReached {
+					continue
+				}
+				if err == ErrTruncated && !bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length() {
+					t.Fatalf("b.Question() modified the message after the: %v error", ErrTruncated)
+				}
+				if err != ErrTruncated {
+					t.Fatalf("b.Question() returned error: %v", err)
+				}
+			}
+
+			if debugFuzz {
+				t.Logf("b.Question(%#v) = %v", q, err)
+			}
+
+			if sizeLimit >= 12 && b.Length() > sizeLimit {
+				t.Fatalf("message size: %v is bigger than the message size limit: %v", b.Length(), sizeLimit)
+			}
+
+			if newSizeLimit := sizeLimit + int(r.uint16()); newSizeLimit >= 12 && newSizeLimit >= b.Length() {
+				if debugFuzz {
+					t.Logf("b.LimitMessageSize(%v)", newSizeLimit)
+				}
+				b.LimitMessageSize(sizeLimit)
+				sizeLimit = newSizeLimit
+			}
+		}
+
+		sectionNames := []string{"Answers", "Authorities", "Additionals"}
+	nextSection:
+		for i, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
+			sectionName := sectionNames[i]
+			if debugFuzz {
+				t.Logf("b.Start%v()", sectionName)
+			}
+			nextSection()
+
+			if r.bool() {
+				flags = r.uint16()
+				if debugFuzz {
+					t.Logf("b.SetFlags(%v)", Flags(flags))
+				}
+				b.SetFlags(Flags(flags))
+			}
+			if r.bool() {
+				id = r.uint16()
+				if debugFuzz {
+					t.Logf("b.SetId(%v)", id)
+				}
+				b.SetID(id)
+			}
+
+			for r.bool() {
+				hdr := ResourceHeader[RawName]{
+					Name:  r.rawName(),
+					Class: Class(r.uint16()),
+					TTL:   r.uint32(),
+				}
+
+				beforeLen := b.Length()
+				before := b.Bytes()
+
+				var err error
+				v := r.uint8()
+				switch v {
+				case 1:
+					hdr.Type = TypeA
+					res := ResourceA{A: [4]byte(r.bytes(4))}
+					err = b.ResourceA(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceA(%#v, %#v) = %v", hdr, res, err)
+					}
+				case 2:
+					hdr.Type = TypeAAAA
+					res := ResourceAAAA{AAAA: [16]byte(r.bytes(16))}
+					err = b.ResourceAAAA(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceAAAA(%#v, %#v) = %v", hdr, res, err)
+					}
+				case 3:
+					hdr.Type = TypeTXT
+					count := r.uint16()
+					txt := ResourceTXT{
+						TXT: make([][]byte, count),
+					}
+					for i := range txt.TXT {
+						txt.TXT[i] = r.arbitraryAmountOfBytes()
+					}
+					err = b.ResourceTXT(hdr, txt)
+					if debugFuzz {
+						t.Logf("b.ResourceTXT(%#v, %#v) = %v", hdr, txt, err)
+					}
+					if err == errTooLongTXTString || err == errTooLongTXT || err == errEmptyTXT {
+						err = nil
+					}
+				case 4:
+					hdr.Type = TypeTXT
+					res := RawResourceTXT{TXT: r.arbitraryAmountOfBytes()}
+					err = b.RawResourceTXT(hdr, res)
+					if debugFuzz {
+						t.Logf("b.RawResourceTXT(%#v, %#v) = %v", hdr, res, err)
+					}
+					if err == errInvalidRawTXTResource {
+						err = nil
+					}
+				case 5:
+					hdr.Type = TypeCNAME
+					res := ResourceCNAME[RawName]{CNAME: r.rawName()}
+					err = b.ResourceCNAME(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceCNAME(%#v, %#v) = %v", hdr, res, err)
+					}
+				case 6:
+					hdr.Type = TypeMX
+					res := ResourceMX[RawName]{Pref: r.uint16(), MX: r.rawName()}
+					err = b.ResourceMX(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceMX(%#v, %#v) = %v", hdr, res, err)
+					}
+				default:
+					continue nextSection
+				}
+
+				if err != nil {
+					if err == errResourceCountLimitReached {
+						continue
+					}
+					if err == ErrTruncated && !bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length() {
+						t.Fatalf("%v section, resource appending modified the message after the: %v error", sectionName, ErrTruncated)
+					}
+					if err != ErrTruncated {
+						t.Fatalf("%v section, at %v, unexpected resource appending error: %v", sectionName, v, err)
+					}
+				}
+
+				if sizeLimit >= 12 && b.Length() > sizeLimit {
+					t.Fatalf("message size: %v is bigger than the message size limit: %v", b.Length(), sizeLimit)
+				}
+
+				if newSizeLimit := sizeLimit + int(r.uint16()); newSizeLimit >= 12 && newSizeLimit >= b.Length() {
+					b.LimitMessageSize(sizeLimit)
+					sizeLimit = newSizeLimit
+				}
+			}
+		}
+
+		p, hdr, err := Parse(b.Bytes()[len(start):])
+		if err != nil {
+			t.Fatalf("Parse() returned error: %v", err)
+		}
+
+		if hdr.ID != id {
+			t.Fatalf("Parse(): unexpected id in header: %v, want: %v", hdr.ID, id)
+		}
+
+		if hdr.Flags != Flags(flags) {
+			t.Fatalf("Parse(): unexpected flags in header: %v, want: %v", hdr.Flags, Flags(flags))
+		}
+
+		for {
+			t.Log(p.msg)
+			_, err := p.Question()
+			if err != nil {
+				if err == ErrSectionDone {
+					break
+				}
+				t.Fatalf("p.Question() returned error: %v", err)
+			}
+		}
+
+		sectionNames = []string{"Answers", "Authorities", "Additionals"}
+		for i, nextSection := range []func() error{p.StartAnswers, p.StartAuthorities, p.StartAdditionals} {
+			sectionName := sectionNames[i]
+			if err := nextSection(); err != nil {
+				t.Fatalf("p.Start%v() returned error: %v", sectionName, err)
+			}
+
+			for {
+				rhdr, err := p.ResourceHeader()
+				if err != nil {
+					if err == ErrSectionDone {
+						break
+					}
+					t.Fatalf("p.ResourceHeader() returned error: %v", err)
+				}
+
+				switch rhdr.Type {
+				case TypeA:
+					_, err = p.ResourceA()
+				case TypeAAAA:
+					_, err = p.ResourceAAAA()
+				case TypeCNAME:
+					_, err = p.ResourceCNAME()
+				case TypeMX:
+					_, err = p.ResourceMX()
+				case TypeTXT:
+					_, err = p.RawResourceTXT()
+				default:
+					err = p.SkipResourceData()
+				}
+
+				if err != nil {
+					t.Fatalf("%v section, %v resource, resource data parsing returned error: %v", sectionName, rhdr.Type, err)
+				}
+			}
+		}
+	})
+}

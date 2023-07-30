@@ -701,6 +701,7 @@ func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT
 	return nil
 }
 
+var errEmptyTXT = errors.New("empty txt resource")
 var errTooLongTXTString = errors.New("too long txt string")
 var errTooLongTXT = errors.New("too long txt resource")
 
@@ -718,6 +719,10 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 		if totalLength > math.MaxUint16 {
 			return errTooLongTXT
 		}
+	}
+
+	if totalLength == 0 {
+		return errEmptyTXT
 	}
 
 	hdr.Length = uint16(totalLength)
@@ -1061,7 +1066,7 @@ func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffse
 		}
 
 		if m.available == 0 {
-			m.grow(msg[headerStartOffset:], name)
+			m.grow(msg[headerStartOffset:], name, headerStartOffset)
 		}
 
 		var (
@@ -1079,8 +1084,8 @@ func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffse
 
 			m := m.entries[idx]
 			if m.fingerprint() == fingerprint {
-				if int(m.ptr()) < len(msg) {
-					msgNameIndex := int(m.ptr())
+				msgNameIndex := int(m.ptr()) + headerStartOffset
+				if msgNameIndex < len(msg) {
 					rawNameIndex := i
 					for {
 						if msg[msgNameIndex]&0xC0 == 0xC0 {
@@ -1113,7 +1118,7 @@ func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffse
 			idx = (idx + 1) & mask
 		}
 
-		newPtr := len(msg) + i
+		newPtr := len(msg) - headerStartOffset + i
 		if newPtr <= maxPtr {
 			m.available--
 			m.entries[idx].fill(fingerprint, uint16(newPtr))
@@ -1139,7 +1144,7 @@ func (m *nameBuilderState) removeNamesFromCompressionMap(headerStartOffset, name
 	}
 }
 
-func (m *nameBuilderState) grow(msg, name []byte) {
+func (m *nameBuilderState) grow(msg, name []byte, headerStartOffset int) {
 	length := len(m.entries) * 2
 	if length == 0 {
 		length = 16
@@ -1157,7 +1162,7 @@ func (m *nameBuilderState) grow(msg, name []byte) {
 		}
 
 		var (
-			offset = int(entry.ptr())
+			offset = int(entry.ptr()) + headerStartOffset
 			hash   = uint64(0)
 		)
 
