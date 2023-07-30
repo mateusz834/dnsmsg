@@ -570,8 +570,6 @@ func testRemoveLastlyCompressedName(msg []byte, compression map[string]uint16, h
 	}
 }
 
-const debugFuzz = false
-
 func FuzzAppendName(f *testing.F) {
 	f.Fuzz(func(t *testing.T, rand []byte) {
 		names := randStringNames(rand)
