@@ -287,6 +287,29 @@ func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
 	}, nil
 }
 
+// ResourceNS parses a single NS resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeNS].
+func (m *Parser) ResourceNS() (ResourceNS[ParserName], error) {
+	if !m.resourceData || m.nextResourceType != TypeNS {
+		return ResourceNS[ParserName]{}, errInvalidOperation
+	}
+
+	ns, offset, err := m.unpackName(m.curOffset)
+	if err != nil {
+		return ResourceNS[ParserName]{}, err
+	}
+
+	if offset != m.nextResourceDataLength {
+		return ResourceNS[ParserName]{}, errInvalidDNSMessage
+	}
+
+	m.resourceData = false
+	m.curOffset += int(offset)
+	return ResourceNS[ParserName]{ns}, nil
+}
+
 // ResourceCNAME parses a single CNAME resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]

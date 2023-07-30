@@ -647,6 +647,25 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 	return nil
 }
 
+// ResourceNS appends a single NS resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
+func (b *Builder) ResourceNS(hdr ResourceHeader[RawName], ns ResourceNS[RawName]) error {
+	hdr.Type = TypeNS
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
+	if err != nil {
+		return err
+	}
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ns.NS, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
+	f.fixup(b)
+	return nil
+}
+
 // ResourceCNAME appends a single CNAME resource.
 // It errors when the amount of resources in the current section is equal to 65535.
 //
