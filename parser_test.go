@@ -1027,16 +1027,11 @@ func TestParserInvalidOperation(t *testing.T) {
 			Class: ClassIN,
 			TTL:   60,
 		}
-		hdr.Type = TypeA
 		b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}})
-		hdr.Type = TypeAAAA
 		b.ResourceAAAA(hdr, ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()})
-		hdr.Type = TypeTXT
 		b.ResourceTXT(hdr, ResourceTXT{TXT: [][]byte{[]byte("test"), []byte("test2")}})
 		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
-		hdr.Type = TypeCNAME
 		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
-		hdr.Type = TypeMX
 		b.ResourceMX(hdr, ResourceMX[RawName]{Pref: 100, MX: MustNewRawName("smtp.example.com")})
 	}
 
@@ -1220,7 +1215,6 @@ func FuzzParser(f *testing.F) {
 	b.StartAnswers()
 	b.ResourceA(ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
-		Type:  TypeA,
 		Class: ClassIN,
 		TTL:   60,
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})

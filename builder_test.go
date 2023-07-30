@@ -876,21 +876,18 @@ func TestBuilder(t *testing.T) {
 		sectionName := sectionNames[i]
 		nextSection()
 
-		rhdr.Type = TypeA
 		rhdr.TTL = 32383739
 		if err := b.ResourceA(rhdr, resourceA); err != nil {
 			t.Fatalf("%v section, b.ResourceA() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
 
-		rhdr.Type = TypeAAAA
 		rhdr.TTL = 3600
 		if err := b.ResourceAAAA(rhdr, resourceAAAA); err != nil {
 			t.Fatalf("%v section, b.ResourceAAAA() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
 
-		rhdr.Type = TypeTXT
 		if err := b.ResourceTXT(rhdr, resourceTXT); err != nil {
 			t.Fatalf("%v section, b.ResourceTXT() unexpected error: %v", sectionName, err)
 		}
@@ -901,13 +898,11 @@ func TestBuilder(t *testing.T) {
 		}
 		testAfterAppend(sectionName)
 
-		rhdr.Type = TypeCNAME
 		if err := b.ResourceCNAME(rhdr, resourceCNAME); err != nil {
 			t.Fatalf("%v section, b.ResourceCNAME() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
 
-		rhdr.Type = TypeMX
 		if err := b.ResourceMX(rhdr, resourceMX); err != nil {
 			t.Fatalf("%v section, b.ResourceMX() unexpected error: %v", sectionName, err)
 		}
@@ -1080,7 +1075,6 @@ func TestBuilderRDBuilder(t *testing.T) {
 	if err := b.ResourceA(ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
 		Class: ClassIN,
-		Type:  TypeA,
 	}, ResourceA{}); err != nil {
 		t.Fatalf("b.ResourceA() unexpected error: %v", err)
 	}
@@ -1287,7 +1281,6 @@ func TestBuilderReset(t *testing.T) {
 
 	hdr := ResourceHeader[RawName]{
 		Name:  MustNewRawName("example.com"),
-		Type:  TypeA,
 		Class: ClassIN,
 	}
 
@@ -1321,7 +1314,6 @@ func TestBuilderReset(t *testing.T) {
 	}
 
 	b.StartAnswers()
-	hdr.Type = TypeAAAA
 	hdr.Name = MustNewRawName("internal.example.com")
 	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
@@ -1336,7 +1328,6 @@ func TestBuilderReset(t *testing.T) {
 	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
-	hdr.Type = TypeA
 	hdr.Name = MustNewRawName("www.admin.internal.example.net")
 	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
@@ -1616,21 +1607,18 @@ func FuzzBuilder(f *testing.F) {
 				v := r.uint8()
 				switch v {
 				case 1:
-					hdr.Type = TypeA
 					res := ResourceA{A: [4]byte(r.bytes(4))}
 					err = b.ResourceA(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceA(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 2:
-					hdr.Type = TypeAAAA
 					res := ResourceAAAA{AAAA: [16]byte(r.bytes(16))}
 					err = b.ResourceAAAA(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceAAAA(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 3:
-					hdr.Type = TypeTXT
 					count := r.uint16()
 					txt := ResourceTXT{
 						TXT: make([][]byte, count),
@@ -1646,7 +1634,6 @@ func FuzzBuilder(f *testing.F) {
 						err = nil
 					}
 				case 4:
-					hdr.Type = TypeTXT
 					res := RawResourceTXT{TXT: r.arbitraryAmountOfBytes()}
 					err = b.RawResourceTXT(hdr, res)
 					if debugFuzz {
@@ -1656,14 +1643,12 @@ func FuzzBuilder(f *testing.F) {
 						err = nil
 					}
 				case 5:
-					hdr.Type = TypeCNAME
 					res := ResourceCNAME[RawName]{CNAME: r.rawName()}
 					err = b.ResourceCNAME(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceCNAME(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 6:
-					hdr.Type = TypeMX
 					res := ResourceMX[RawName]{Pref: r.uint16(), MX: r.rawName()}
 					err = b.ResourceMX(hdr, res)
 					if debugFuzz {

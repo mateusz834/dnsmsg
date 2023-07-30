@@ -624,6 +624,7 @@ func (b *Builder) Question(q Question[RawName]) error {
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
+	hdr.Type = TypeA
 	hdr.Length = 4
 	if err := b.appendHeader(hdr, b.maxBufSize-4); err != nil {
 		return err
@@ -637,6 +638,7 @@ func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
+	hdr.Type = TypeAAAA
 	hdr.Length = 16
 	if err := b.appendHeader(hdr, b.maxBufSize-16); err != nil {
 		return err
@@ -650,6 +652,7 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
+	hdr.Type = TypeCNAME
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
@@ -668,6 +671,7 @@ func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
+	hdr.Type = TypeMX
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize-2)
 	if err != nil {
 		return err
@@ -689,6 +693,7 @@ var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT) error {
+	hdr.Type = TypeTXT
 	if len(txt.TXT) > math.MaxUint16 || !txt.isValid() {
 		return errInvalidRawTXTResource
 	}
@@ -710,6 +715,7 @@ var errTooLongTXT = errors.New("too long txt resource")
 //
 // The building section must NOT be set to questions, otherwise it panics.
 func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
+	hdr.Type = TypeTXT
 	totalLength := 0
 	for _, str := range txt.TXT {
 		if len(str) > math.MaxUint8 {
