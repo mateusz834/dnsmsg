@@ -1553,7 +1553,7 @@ func FuzzBuilder(f *testing.F) {
 				if err == errResourceCountLimitReached {
 					continue
 				}
-				if err == ErrTruncated && !bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length() {
+				if err == ErrTruncated && (!bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length()) {
 					t.Fatalf("b.Question() modified the message after the: %v error", ErrTruncated)
 				}
 				if err != ErrTruncated {
@@ -1677,7 +1677,7 @@ func FuzzBuilder(f *testing.F) {
 					if err == errResourceCountLimitReached {
 						continue
 					}
-					if err == ErrTruncated && !bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length() {
+					if err == ErrTruncated && (!bytes.Equal(append([]byte{}, before...), b.Bytes()) || beforeLen != b.Length()) {
 						t.Fatalf("%v section, resource appending modified the message after the: %v error", sectionName, ErrTruncated)
 					}
 					if err != ErrTruncated {
