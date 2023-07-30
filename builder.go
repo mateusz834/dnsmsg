@@ -1066,7 +1066,7 @@ func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffse
 		}
 
 		if m.available == 0 {
-			m.grow(msg[headerStartOffset:], name, headerStartOffset)
+			m.grow(msg[headerStartOffset:], name)
 		}
 
 		var (
@@ -1144,7 +1144,7 @@ func (m *nameBuilderState) removeNamesFromCompressionMap(headerStartOffset, name
 	}
 }
 
-func (m *nameBuilderState) grow(msg, name []byte, headerStartOffset int) {
+func (m *nameBuilderState) grow(msg, name []byte) {
 	length := len(m.entries) * 2
 	if length == 0 {
 		length = 16
@@ -1162,7 +1162,7 @@ func (m *nameBuilderState) grow(msg, name []byte, headerStartOffset int) {
 		}
 
 		var (
-			offset = int(entry.ptr()) + headerStartOffset
+			offset = int(entry.ptr())
 			hash   = uint64(0)
 		)
 
