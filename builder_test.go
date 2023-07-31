@@ -861,6 +861,7 @@ func TestBuilder(t *testing.T) {
 			Expire:  1223999999,
 			Minimum: 123456789,
 		}
+		resourcePTR = ResourcePTR[RawName]{PTR: MustNewRawName("1.2.0.192.in-addr.arpa")}
 		resourceTXT = ResourceTXT{
 			TXT: [][]byte{
 				bytes.Repeat([]byte("a"), 209),
@@ -905,7 +906,12 @@ func TestBuilder(t *testing.T) {
 		testAfterAppend(sectionName)
 
 		if err := b.ResourceSOA(rhdr, resourceSOA); err != nil {
-			t.Fatalf("%v section, b.ResourceCNAME() unexpected error: %v", sectionName, err)
+			t.Fatalf("%v section, b.ResourceSOA() unexpected error: %v", sectionName, err)
+		}
+		testAfterAppend(sectionName)
+
+		if err := b.ResourcePTR(rhdr, resourcePTR); err != nil {
+			t.Fatalf("%v section, b.ResourcePTR() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
 
@@ -1023,6 +1029,13 @@ func TestBuilder(t *testing.T) {
 			t.Fatalf("%v section, p.ResourceSOA(): unexpected error: %v", curSectionName, err)
 		}
 		equalRData(t, "p.ResourceSOA()", resourceSOA, resSOA)
+
+		parseResourceHeader(curSectionName, TypePTR, ClassIN, 3600)
+		resPTR, err := p.ResourcePTR()
+		if err != nil {
+			t.Fatalf("%v section, p.ResourcePTR(): unexpected error: %v", curSectionName, err)
+		}
+		equalRData(t, "p.ResourcePTR()", resourcePTR, resPTR)
 
 		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resRawTXT, err := p.RawResourceTXT()

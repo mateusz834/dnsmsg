@@ -717,6 +717,25 @@ func (b *Builder) ResourceSOA(hdr ResourceHeader[RawName], soa ResourceSOA[RawNa
 	return nil
 }
 
+// ResourcePTR appends a single PTR resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
+func (b *Builder) ResourcePTR(hdr ResourceHeader[RawName], ptr ResourcePTR[RawName]) error {
+	hdr.Type = TypePTR
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
+	if err != nil {
+		return err
+	}
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ptr.PTR, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
+	f.fixup(b)
+	return nil
+}
+
 // ResourceMX appends a single MX resource.
 // It errors when the amount of resources in the current section is equal to 65535.
 //

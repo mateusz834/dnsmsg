@@ -383,6 +383,29 @@ func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
 	}, nil
 }
 
+// ResourcePTR parses a single PTR resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypePTR].
+func (m *Parser) ResourcePTR() (ResourcePTR[ParserName], error) {
+	if !m.resourceData || m.nextResourceType != TypePTR {
+		return ResourcePTR[ParserName]{}, errInvalidOperation
+	}
+
+	name, offset, err := m.unpackName(m.curOffset)
+	if err != nil {
+		return ResourcePTR[ParserName]{}, err
+	}
+
+	if offset != m.nextResourceDataLength {
+		return ResourcePTR[ParserName]{}, errInvalidDNSMessage
+	}
+
+	m.resourceData = false
+	m.curOffset += int(offset)
+	return ResourcePTR[ParserName]{name}, nil
+}
+
 // ResourceMX parses a single MX resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]

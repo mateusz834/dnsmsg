@@ -1039,6 +1039,7 @@ func TestParserInvalidOperation(t *testing.T) {
 			Expire:  1223999999,
 			Minimum: 123456789,
 		})
+		b.ResourcePTR(hdr, ResourcePTR[RawName]{PTR: MustNewRawName("ns1.example.com")})
 		b.ResourceTXT(hdr, ResourceTXT{TXT: [][]byte{[]byte("test"), []byte("test2")}})
 		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
 		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
@@ -1050,7 +1051,7 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
-	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeSOA, TypeTXT, TypeCNAME, TypeMX}
+	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeSOA, TypePTR, TypeTXT, TypeCNAME, TypeMX}
 	parseResource := func(p *Parser, resType Type) error {
 		switch resType {
 		case TypeA:
@@ -1061,6 +1062,8 @@ func TestParserInvalidOperation(t *testing.T) {
 			_, err = p.ResourceNS()
 		case TypeSOA:
 			_, err = p.ResourceSOA()
+		case TypePTR:
+			_, err = p.ResourcePTR()
 		case TypeTXT:
 			_, err = p.RawResourceTXT()
 		case TypeCNAME:
@@ -1352,6 +1355,8 @@ func FuzzParser(f *testing.F) {
 						_, err = p.ResourceCNAME()
 					case TypeSOA:
 						_, err = p.ResourceSOA()
+					case TypePTR:
+						_, err = p.ResourcePTR()
 					case TypeMX:
 						_, err = p.ResourceMX()
 					case TypeTXT:
