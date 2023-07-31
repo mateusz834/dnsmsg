@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -986,70 +987,98 @@ func TestBuilder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v section, p.ResourceA(): unexpected error: %v", curSectionName, err)
 		}
-		if resA != resourceA {
-			t.Errorf("%v section, p.ResourceA() = %#v, want: %#v", curSectionName, resA, resourceA)
-		}
+		equalRData(t, "p.ResourceA()", resourceA, resA)
 
 		parseResourceHeader(curSectionName, TypeAAAA, ClassIN, 3600)
 		resAAAA, err := p.ResourceAAAA()
 		if err != nil {
 			t.Fatalf("%v section, p.ResourceAAAA(): unexpected error: %v", curSectionName, err)
 		}
-		if resAAAA != resourceAAAA {
-			t.Errorf("%v section, p.ResourceAAAA() =  %#v, want: %#v", curSectionName, resAAAA, resourceAAAA)
-		}
+		equalRData(t, "p.ResourceAAAA()", resourceAAAA, resAAAA)
 
 		parseResourceHeader(curSectionName, TypeNS, ClassIN, 3600)
 		resNS, err := p.ResourceNS()
 		if err != nil {
 			t.Fatalf("%v section, p.ResourceNS(): unexpected error: %v", curSectionName, err)
 		}
-		if !resNS.NS.EqualName(MustNewName("ns1.example.com")) {
-			t.Errorf("%v section, p.ResourceNS().NS = %#v, want: %#v", curSectionName, resNS.NS.String(), resourceNS.NS)
-		}
+		equalRData(t, "p.ResourceNS()", resourceNS, resNS)
 
 		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resRawTXT, err := p.RawResourceTXT()
 		if err != nil {
 			t.Fatalf("%v section, p.RawResourceTXT(): unexpected error: %v", curSectionName, err)
 		}
-		if !bytes.Equal(resRawTXT.TXT, rawResourceTXT.TXT) {
-			t.Errorf("%v section, p.RawResourceTXT() = t %#v, want: %#v", curSectionName, resRawTXT, rawResourceTXT)
-		}
+		equalRData(t, "p.RawResourceTXT() 1", rawResourceTXT, resRawTXT)
 
 		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resTXT, err := p.RawResourceTXT()
 		if err != nil {
 			t.Fatalf("%v section, p.RawResourceTXT(): unexpected error: %v", curSectionName, err)
 		}
-		if !bytes.Equal(resTXT.TXT, rawResourceTXT.TXT) {
-			t.Errorf("%v section, p.RawResourceTXT() = %#v, want: %#v", curSectionName, resTXT, resourceTXT)
-		}
+		equalRData(t, "p.RawResourceTXT() 2", rawResourceTXT, resTXT)
 
 		parseResourceHeader(curSectionName, TypeCNAME, ClassIN, 3600)
 		resCNAME, err := p.ResourceCNAME()
 		if err != nil {
 			t.Fatalf("%v section, p.ResourceCNAME(): unexpected error: %v", curSectionName, err)
 		}
-		if !resCNAME.CNAME.EqualName(MustNewName("www.example.com")) {
-			t.Errorf("%v section, p.ResourceCNAME().CNAME = %#v, want: %#v", curSectionName, resCNAME.CNAME.String(), resourceCNAME.CNAME)
-		}
+		equalRData(t, "p.ResourceCNAME()", resourceCNAME, resCNAME)
 
 		parseResourceHeader(curSectionName, TypeMX, ClassIN, 3600)
 		resMX, err := p.ResourceMX()
 		if err != nil {
 			t.Fatalf("%v section, p.ResourceMX(): unexpected error: %v", curSectionName, err)
 		}
-		if resMX.Pref != resourceMX.Pref {
-			t.Errorf("%v section, p.ResourceMX().Pref = %v, want: %v", curSectionName, resMX.Pref, resourceMX.Pref)
-		}
-		if !resMX.MX.EqualName(MustNewName("smtp.example.com")) {
-			t.Errorf("%v section, p.ResourceMX().MX = %v, want: %v", curSectionName, resMX.MX.String(), resourceMX.MX)
-		}
+		equalRData(t, "p.ResourceMX()", resourceMX, resMX)
 	}
 
 	if err := p.End(); err != nil {
 		t.Fatalf("p.End() unexpected error: %v", err)
+	}
+}
+
+func equalRData(t *testing.T, name string, r1, r2 any) {
+	r1val := reflect.ValueOf(r1)
+	r2val := reflect.ValueOf(r2)
+
+	if r1val.NumField() != r2val.NumField() {
+		t.Fatal("different amount of fields")
+	}
+
+	for i := 0; i < r1val.NumField(); i++ {
+		fieldName := r1val.Type().Field(i).Name
+
+		if fieldName != r2val.Type().Field(i).Name {
+			t.Fatal("different field names")
+		}
+
+		r1Field := r1val.Field(i)
+		r2Field := r2val.Field(i)
+
+		if rawName, ok := r1Field.Interface().(RawName); ok {
+			parserName := r2Field.Interface().(ParserName)
+			parserNameAsRawname := parserName.AsRawName()
+
+			if !bytes.Equal(parserNameAsRawname, rawName) {
+				t.Errorf("%v: %v.%v = %v, want: %v ", name, r1val.Type().Name(), fieldName, parserNameAsRawname, rawName)
+			}
+
+			continue
+		}
+
+		if b, ok := r1Field.Interface().([]byte); ok {
+			b2 := r2Field.Interface().([]byte)
+
+			if !bytes.Equal(b2, b) {
+				t.Errorf("%v: %v.%v = %v, want: %v ", name, r1val.Type().Name(), fieldName, b2, b)
+			}
+
+			continue
+		}
+
+		if !r1Field.Equal(r2Field) {
+			t.Errorf("%v: %v.%v = %v, want: %v ", name, r1val.Type().Name(), fieldName, r1Field.Interface(), r2Field.Interface())
+		}
 	}
 }
 
