@@ -685,6 +685,38 @@ func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME
 	return nil
 }
 
+// ResourceSOA appends a single SOA resource.
+// It errors when the amount of resources in the current section is equal to 65535.
+//
+// The building section must NOT be set to questions, otherwise it panics.
+func (b *Builder) ResourceSOA(hdr ResourceHeader[RawName], soa ResourceSOA[RawName]) error {
+	hdr.Type = TypeSOA
+	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
+	if err != nil {
+		return err
+	}
+
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, soa.NS, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
+
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-20, b.headerStartOffset, soa.Mbox, true)
+	if err != nil {
+		b.removeResourceHeader(hdrOffset)
+		return err
+	}
+
+	b.buf = appendUint32(b.buf, soa.Serial)
+	b.buf = appendUint32(b.buf, soa.Refresh)
+	b.buf = appendUint32(b.buf, soa.Retry)
+	b.buf = appendUint32(b.buf, soa.Expire)
+	b.buf = appendUint32(b.buf, soa.Minimum)
+	f.fixup(b)
+	return nil
+}
+
 // ResourceMX appends a single MX resource.
 // It errors when the amount of resources in the current section is equal to 65535.
 //

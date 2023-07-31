@@ -1030,6 +1030,15 @@ func TestParserInvalidOperation(t *testing.T) {
 		b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}})
 		b.ResourceAAAA(hdr, ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()})
 		b.ResourceNS(hdr, ResourceNS[RawName]{NS: MustNewRawName("ns1.example.com")})
+		b.ResourceSOA(hdr, ResourceSOA[RawName]{
+			NS:      MustNewRawName("ns1.example.com"),
+			Mbox:    MustNewRawName("admin.example.com"),
+			Serial:  2022010199,
+			Refresh: 3948793,
+			Retry:   34383744,
+			Expire:  1223999999,
+			Minimum: 123456789,
+		})
 		b.ResourceTXT(hdr, ResourceTXT{TXT: [][]byte{[]byte("test"), []byte("test2")}})
 		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
 		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
@@ -1041,7 +1050,7 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
-	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeTXT, TypeCNAME, TypeMX}
+	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeSOA, TypeTXT, TypeCNAME, TypeMX}
 	parseResource := func(p *Parser, resType Type) error {
 		switch resType {
 		case TypeA:
@@ -1050,6 +1059,8 @@ func TestParserInvalidOperation(t *testing.T) {
 			_, err = p.ResourceAAAA()
 		case TypeNS:
 			_, err = p.ResourceNS()
+		case TypeSOA:
+			_, err = p.ResourceSOA()
 		case TypeTXT:
 			_, err = p.RawResourceTXT()
 		case TypeCNAME:
@@ -1339,6 +1350,8 @@ func FuzzParser(f *testing.F) {
 						_, err = p.ResourceNS()
 					case TypeCNAME:
 						_, err = p.ResourceCNAME()
+					case TypeSOA:
+						_, err = p.ResourceSOA()
 					case TypeMX:
 						_, err = p.ResourceMX()
 					case TypeTXT:

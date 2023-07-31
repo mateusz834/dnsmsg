@@ -333,6 +333,56 @@ func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
 	return ResourceCNAME[ParserName]{name}, nil
 }
 
+// ResourceSOA parses a single SOA resouce data.
+//
+// This method can only be used after [Parser.ResourceHeader]
+// returns a [ResourceHeader] with a Type field equal to [TypeSOA].
+func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
+	if !m.resourceData || m.nextResourceType != TypeSOA {
+		return ResourceSOA[ParserName]{}, errInvalidOperation
+	}
+
+	tmpOffset := m.curOffset
+	ns, offset, err := m.unpackName(tmpOffset)
+	if err != nil {
+		return ResourceSOA[ParserName]{}, err
+	}
+	tmpOffset += int(offset)
+
+	mbox, offset, err := m.unpackName(tmpOffset)
+	if err != nil {
+		return ResourceSOA[ParserName]{}, err
+	}
+	tmpOffset += int(offset)
+
+	if len(m.msg)-tmpOffset < 20 {
+		return ResourceSOA[ParserName]{}, errInvalidDNSMessage
+	}
+
+	serial := unpackUint32(m.msg[tmpOffset:])
+	refresh := unpackUint32(m.msg[tmpOffset+4:])
+	retry := unpackUint32(m.msg[tmpOffset+8:])
+	expire := unpackUint32(m.msg[tmpOffset+12:])
+	minimum := unpackUint32(m.msg[tmpOffset+16:])
+	tmpOffset += 20
+
+	if tmpOffset-m.curOffset != int(m.nextResourceDataLength) {
+		return ResourceSOA[ParserName]{}, errInvalidDNSMessage
+	}
+
+	m.resourceData = false
+	m.curOffset = tmpOffset
+	return ResourceSOA[ParserName]{
+		NS:      ns,
+		Mbox:    mbox,
+		Serial:  serial,
+		Refresh: refresh,
+		Retry:   retry,
+		Expire:  expire,
+		Minimum: minimum,
+	}, nil
+}
+
 // ResourceMX parses a single MX resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]

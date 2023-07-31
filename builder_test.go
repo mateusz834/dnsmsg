@@ -852,7 +852,16 @@ func TestBuilder(t *testing.T) {
 		resourceA    = ResourceA{A: [4]byte{192, 0, 2, 1}}
 		resourceAAAA = ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()}
 		resourceNS   = ResourceNS[RawName]{NS: MustNewRawName("ns1.example.com")}
-		resourceTXT  = ResourceTXT{
+		resourceSOA  = ResourceSOA[RawName]{
+			NS:      MustNewRawName("ns1.example.com"),
+			Mbox:    MustNewRawName("admin.example.com"),
+			Serial:  2022010199,
+			Refresh: 3948793,
+			Retry:   34383744,
+			Expire:  1223999999,
+			Minimum: 123456789,
+		}
+		resourceTXT = ResourceTXT{
 			TXT: [][]byte{
 				bytes.Repeat([]byte("a"), 209),
 				bytes.Repeat([]byte("b"), 105),
@@ -892,6 +901,11 @@ func TestBuilder(t *testing.T) {
 
 		if err := b.ResourceNS(rhdr, resourceNS); err != nil {
 			t.Fatalf("%v section, b.ResourceNS() unexpected error: %v", sectionName, err)
+		}
+		testAfterAppend(sectionName)
+
+		if err := b.ResourceSOA(rhdr, resourceSOA); err != nil {
+			t.Fatalf("%v section, b.ResourceCNAME() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
 
@@ -1002,6 +1016,13 @@ func TestBuilder(t *testing.T) {
 			t.Fatalf("%v section, p.ResourceNS(): unexpected error: %v", curSectionName, err)
 		}
 		equalRData(t, "p.ResourceNS()", resourceNS, resNS)
+
+		parseResourceHeader(curSectionName, TypeSOA, ClassIN, 3600)
+		resSOA, err := p.ResourceSOA()
+		if err != nil {
+			t.Fatalf("%v section, p.ResourceSOA(): unexpected error: %v", curSectionName, err)
+		}
+		equalRData(t, "p.ResourceSOA()", resourceSOA, resSOA)
 
 		parseResourceHeader(curSectionName, TypeTXT, ClassIN, 3600)
 		resRawTXT, err := p.RawResourceTXT()
@@ -1669,6 +1690,20 @@ func FuzzBuilder(f *testing.F) {
 						t.Logf("b.ResourceNS(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 4:
+					res := ResourceSOA[RawName]{
+						NS:      r.rawName(),
+						Mbox:    r.rawName(),
+						Serial:  r.uint32(),
+						Refresh: r.uint32(),
+						Retry:   r.uint32(),
+						Expire:  r.uint32(),
+						Minimum: r.uint32(),
+					}
+					err = b.ResourceSOA(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceSOA(%#v, %#v) = %v", hdr, res, err)
+					}
+				case 5:
 					count := r.uint16()
 					txt := ResourceTXT{
 						TXT: make([][]byte, count),
@@ -1683,7 +1718,7 @@ func FuzzBuilder(f *testing.F) {
 					if err == errTooLongTXTString || err == errTooLongTXT || err == errEmptyTXT {
 						err = nil
 					}
-				case 5:
+				case 6:
 					res := RawResourceTXT{TXT: r.arbitraryAmountOfBytes()}
 					err = b.RawResourceTXT(hdr, res)
 					if debugFuzz {
@@ -1692,13 +1727,13 @@ func FuzzBuilder(f *testing.F) {
 					if err == errInvalidRawTXTResource {
 						err = nil
 					}
-				case 6:
+				case 7:
 					res := ResourceCNAME[RawName]{CNAME: r.rawName()}
 					err = b.ResourceCNAME(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceCNAME(%#v, %#v) = %v", hdr, res, err)
 					}
-				case 7:
+				case 8:
 					res := ResourceMX[RawName]{Pref: r.uint16(), MX: r.rawName()}
 					err = b.ResourceMX(hdr, res)
 					if debugFuzz {
