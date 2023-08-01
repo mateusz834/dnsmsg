@@ -50,9 +50,9 @@ func Parse(msg []byte) (Parser, Header, error) {
 // By default the parsing section is set to questions, this allows parsing the questions section by the
 // use of the [Parser.Question] method.
 // After changing the parsing section (using one of the Start* methods described above) the [Parser.ResourceHeader]
-// method in conjunction with resource parsing methods ([Parser.ResourceA], [Parser.ResourceAAAA],
-// [Parser.ResourceCNAME], [Parser.ResourceMX], [Parser.RawResourceTXT]), [Parser.SkipResourceData] or
-// [Parser.RDParser] can be used to parse the resource data.
+// method in conjunction with resource parsing methods [Parser.ResourceA], [Parser.ResourceAAAA], [Parser.ResourceNS],
+// [Parser.ResourceCNAME], [Parser.ResourceSOA], [Parser.ResourcePTR] [Parser.ResourceMX], [Parser.RawResourceTXT],
+// [Parser.SkipResourceData] or [Parser.RDParser] can be used to parse the resource data.
 //
 // Parser can be copied to preserve the current parsing state.
 type Parser struct {

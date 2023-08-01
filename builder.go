@@ -452,9 +452,9 @@ const (
 // By default the building section is set to questions, it allows appending questions by the
 // use of the [Builder.Question] method.
 // After changing the building section (using one of the Start* methods described above) the
-// resource building methods: ([Builder.ResourceA], [Builder.ResourceAAAA], [Builder.ResourceCNAME],
-// [Builder.ResourceMX], [Builder.RawResourceTXT], [Builder.ResourceTXT]), [Builder.SkipResourceData] or
-// [Builder.RDBuilder] can be used to append DNS resources.
+// resource building methods: [Builder.ResourceA], [Builder.ResourceAAAA], [Builder.ResourceNS], [Builder.ResourceCNAME],
+// [Builder.ResourceSOA], [Builder.ResourcePTR], [Builder.ResourceMX], [Builder.RawResourceTXT], [Builder.ResourceTXT]
+// or [Builder.RDBuilder] can be used to append DNS resources.
 //
 // The zero value of this type shouldn't be used.
 type Builder struct {
