@@ -1117,46 +1117,6 @@ func equalRData(t *testing.T, name string, r1, r2 any) {
 }
 
 func TestBuilderRDBuilder(t *testing.T) {
-	b := StartBuilder(make([]byte, 0, 512), 0, 0)
-	b.StartAnswers()
-	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
-		Name:   MustNewRawName("example.com"),
-		Type:   54839,
-		Class:  ClassIN,
-		Length: 100,
-	})
-	if err != nil {
-		t.Fatalf("b.RDBuilder() unexpected error: %v", err)
-	}
-	if err := rdb.Name(MustNewRawName("www.example.com"), true); err != nil {
-		t.Fatalf("rb.Name() unexpected error: %v", err)
-	}
-	if err := rdb.Bytes([]byte{128, 238, 197}); err != nil {
-		t.Fatalf("rb.Bytes() unexpected error: %v", err)
-	}
-	if err := rdb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
-		t.Fatalf("rb.Name() unexpected error: %v", err)
-	}
-	if err := rdb.Uint8(237); err != nil {
-		t.Fatalf("rb.Uint8() unexpected error: %v", err)
-	}
-	if err := rdb.Uint16(23837); err != nil {
-		t.Fatalf("rb.Uint16() unexpected error: %v", err)
-	}
-	if err := rdb.Uint32(3847323837); err != nil {
-		t.Fatalf("rb.Uint32() unexpected error: %v", err)
-	}
-	if err := rdb.Uint64(3874898383473443); err != nil {
-		t.Fatalf("rb.Uint64() unexpected error: %v", err)
-	}
-
-	if err := b.ResourceA(ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
-		Class: ClassIN,
-	}, ResourceA{}); err != nil {
-		t.Fatalf("b.ResourceA() unexpected error: %v", err)
-	}
-
 	expectPanic := func(name string, f func()) {
 		defer func() {
 			if recover() == nil {
@@ -1165,6 +1125,150 @@ func TestBuilderRDBuilder(t *testing.T) {
 		}()
 		f()
 	}
+
+	b := StartBuilder(make([]byte, 0, 512), 0, 0)
+	b.StartAnswers()
+
+	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
+		Name:  MustNewRawName("www.example.com"),
+		Type:  54839,
+		Class: ClassIN,
+	})
+	if err != nil {
+		t.Fatalf("b.RDBuilder() unexpected error: %v", err)
+	}
+
+	expectPanic("b.ResourceA", func() {
+		b.ResourceA(ResourceHeader[RawName]{
+			Name:  MustNewRawName("example.com"),
+			Class: ClassIN,
+		}, ResourceA{})
+	})
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Name(MustNewRawName("mx1.example.com"), true); err != nil {
+		t.Fatalf("rb.Name() unexpected error: %v", err)
+	}
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Bytes([]byte{1, 2, 3}); err != nil {
+		t.Fatalf("rb.Bytes() unexpected error: %v", err)
+	}
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	expectPanic("b.ResourceA", func() {
+		b.ResourceA(ResourceHeader[RawName]{
+			Name:  MustNewRawName("example.com"),
+			Class: ClassIN,
+		}, ResourceA{})
+	})
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	rdb.Remove()
+
+	rdb, err = b.RDBuilder(ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Type:  54839,
+		Class: ClassIN,
+	})
+	if err != nil {
+		t.Fatalf("b.RDBuilder() unexpected error: %v", err)
+	}
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	expectPanic("b.ResourceA", func() {
+		b.ResourceA(ResourceHeader[RawName]{
+			Name:  MustNewRawName("example.com"),
+			Class: ClassIN,
+		}, ResourceA{})
+	})
+
+	if err := rdb.Name(MustNewRawName("www.example.com"), true); err != nil {
+		t.Fatalf("rb.Name() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Bytes([]byte{128, 238, 197}); err != nil {
+		t.Fatalf("rb.Bytes() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
+		t.Fatalf("rb.Name() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Uint8(237); err != nil {
+		t.Fatalf("rb.Uint8() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Uint16(23837); err != nil {
+		t.Fatalf("rb.Uint16() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Uint32(3847323837); err != nil {
+		t.Fatalf("rb.Uint32() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	if err := rdb.Uint64(3874898383473443); err != nil {
+		t.Fatalf("rb.Uint64() unexpected error: %v", err)
+	}
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	expectPanic("b.ResourceA", func() {
+		b.ResourceA(ResourceHeader[RawName]{
+			Name:  MustNewRawName("example.com"),
+			Class: ClassIN,
+		}, ResourceA{})
+	})
+
+	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
+		t.Fatalf("changes caused by RDBuilder visible before End()")
+	}
+
+	rdb.End()
+
+	if err := b.ResourceA(ResourceHeader[RawName]{
+		Name:  MustNewRawName("example.com"),
+		Class: ClassIN,
+	}, ResourceA{}); err != nil {
+		t.Fatalf("b.ResourceA() unexpected error: %v", err)
+	}
+
+	expectPanic("rb.End()", func() { rdb.End() })
+	expectPanic("rb.Remove()", func() { rdb.Remove() })
 	expectPanic("rb.Length()", func() { rdb.Length() })
 	expectPanic("rb.Bytes()", func() { rdb.Bytes([]byte{1}) })
 	expectPanic("rb.Uint8()", func() { rdb.Uint8(1) })

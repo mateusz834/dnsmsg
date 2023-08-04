@@ -443,6 +443,8 @@ const (
 	sectionAnswers
 	sectionAuthorities
 	sectionAdditionals
+
+	sectionDetachedMask section = 1 << 7
 )
 
 // Builder is an incremental DNS message builder.
@@ -461,6 +463,7 @@ type Builder struct {
 	buf []byte
 	nb  nameBuilderState
 
+	fakeBufSize       int
 	headerStartOffset int
 	maxBufSize        int
 
@@ -474,12 +477,20 @@ func StartBuilder(buf []byte, id uint16, flags Flags) Builder {
 	return Builder{
 		headerStartOffset: len(buf),
 		buf:               append(buf, make([]byte, headerLen)...),
+		fakeBufSize:       math.MaxInt,
 		maxBufSize:        math.MaxInt,
 		hdr: Header{
 			ID:    id,
 			Flags: flags,
 		},
 	}
+}
+
+func (b *Builder) panicInvalidSection() {
+	if b.curSection&sectionDetachedMask != 0 {
+		panic("dnsmsg: invalid usage of the Builder: the Builder is currently detached to a resource data builder, call End() or Remove() before on the resource data builder")
+	}
+	panic("invalid section")
 }
 
 // LimitMessageSize sets the upper limit on the size of the DNS message that can be built using the Builder.
@@ -508,12 +519,20 @@ func (b *Builder) Reset(buf []byte, id uint16, flags Flags) {
 // current state of the DNS message. Any previous calls to Bytes() should be considered invalid.
 func (b *Builder) Bytes() []byte {
 	b.hdr.pack((*[12]byte)(b.buf[b.headerStartOffset:]))
-	return b.buf
+	bufSize := b.fakeBufSize
+	if bufSize > len(b.buf) {
+		bufSize = len(b.buf)
+	}
+	return b.buf[:bufSize]
 }
 
 // Length returns the number of bytes that have been appended to the DNS message up to this point.
 func (b *Builder) Length() int {
-	return len(b.buf) - b.headerStartOffset
+	bufSize := b.fakeBufSize
+	if bufSize > len(b.buf) {
+		bufSize = len(b.buf)
+	}
+	return bufSize - b.headerStartOffset
 }
 
 // Header returns the current state of the builder's header.
@@ -536,7 +555,7 @@ func (b *Builder) SetFlags(flags Flags) {
 // It Panics when the current building section is not questions.
 func (b *Builder) StartAnswers() {
 	if b.curSection != sectionQuestions {
-		panic("invalid section")
+		b.panicInvalidSection()
 	}
 	b.curSection = sectionAnswers
 }
@@ -546,7 +565,7 @@ func (b *Builder) StartAnswers() {
 // It Panics when the current building section is not answers.
 func (b *Builder) StartAuthorities() {
 	if b.curSection != sectionAnswers {
-		panic("invalid section")
+		b.panicInvalidSection()
 	}
 	b.curSection = sectionAuthorities
 }
@@ -556,7 +575,7 @@ func (b *Builder) StartAuthorities() {
 // It Panics when the current building section is not additionals.
 func (b *Builder) StartAdditionals() {
 	if b.curSection != sectionAuthorities {
-		panic("invalid section")
+		b.panicInvalidSection()
 	}
 	b.curSection = sectionAdditionals
 }
@@ -573,7 +592,7 @@ func (b *Builder) incResurceSection() error {
 	case sectionAdditionals:
 		count = &b.hdr.ARCount
 	default:
-		panic("invalid section")
+		b.panicInvalidSection()
 	}
 
 	if *count == math.MaxUint16 {
@@ -600,7 +619,7 @@ func (b *Builder) decResurceSection() {
 // The building section must be set to questions, otherwise it panics.
 func (b *Builder) Question(q Question[RawName]) error {
 	if b.curSection != sectionQuestions {
-		panic("invalid section")
+		b.panicInvalidSection()
 	}
 
 	if b.hdr.QDCount == math.MaxUint16 {
@@ -863,40 +882,107 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName], maxBu
 	return headerLengthFixup(len(b.buf)), nameOffset, nil
 }
 
+func (b *Builder) appendHeaderWithLengthFixupNoInc(hdr ResourceHeader[RawName], maxBufSize int) (headerLengthFixup, int, *uint16, error) {
+	var count *uint16
+	switch b.curSection {
+	case sectionAnswers:
+		count = &b.hdr.ANCount
+	case sectionAuthorities:
+		count = &b.hdr.NSCount
+	case sectionAdditionals:
+		count = &b.hdr.ARCount
+	default:
+		b.panicInvalidSection()
+	}
+
+	if *count == math.MaxUint16 {
+		return 0, 0, nil, errResourceCountLimitReached
+	}
+
+	var err error
+	nameOffset := len(b.buf)
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	b.buf = appendUint16(b.buf, uint16(hdr.Type))
+	b.buf = appendUint16(b.buf, uint16(hdr.Class))
+	b.buf = appendUint32(b.buf, hdr.TTL)
+	b.buf = appendUint16(b.buf, 0)
+	return headerLengthFixup(len(b.buf)), nameOffset, count, nil
+}
+
 func (b *Builder) removeResourceHeader(headerOffset int) {
 	b.nb.removeNamesFromCompressionMap(b.headerStartOffset, headerOffset)
 	b.buf = b.buf[:headerOffset]
 	b.decResurceSection()
 }
 
-// RDParser is a resource data builder used to build custom resources.
+// RDBuilder craeates a new [RDBuilder], used for building custom resource data.
+// It errors when the amount of resources in the current section is equal to 65535.
 //
-// Note: The returned RDBuilder should not be used after creating any new resource in the [Builder].
+// Note: The returned RDBuilder should not be used after creating any new resource in b.
 // Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
-type RDBuilder struct {
-	b         *Builder
-	fixup     headerLengthFixup
-	hdrOffset int
+//
+// The building section must NOT be set to questions, otherwise it panics.
+func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
+	f, hdrOffset, count, err := b.appendHeaderWithLengthFixupNoInc(hdr, b.maxBufSize)
+	if err != nil {
+		return RDBuilder{}, err
+	}
+	b.fakeBufSize = hdrOffset
+	b.curSection |= sectionDetachedMask
+	return RDBuilder{
+		b:         b,
+		count:     count,
+		fixup:     f,
+		hdrOffset: hdrOffset,
+	}, nil
 }
 
-func (b *RDBuilder) isCallValid() {
-	if b.fixup.rDataLength(b.b) != int(b.fixup.currentlyStoredLength(b.b)) {
-		panic("dnsmsg: Invalid usage of RDBuilder. It is not allowed to modify the resource data after creating a new resource.")
-	}
+// RDParser is a resource data builder used to build custom resources.
+//
+// Once the entire resource data has been created, the [RDBuilder.End] method needs to be called.
+//
+// Note: The returned RDBuilder should not be used after creating any new resource in the [Builder].
+// Once a resource is created using the RDBuilder, attempting to use the same RDBuilder might lead to panics.
+type RDBuilder struct {
+	b         *Builder
+	count     *uint16
+	fixup     headerLengthFixup
+	hdrOffset int
 }
 
 var errResourceTooLong = errors.New("too long resource")
 
 // Length returns the current length of the resource data in bytes.
-func (b *RDBuilder) Length() int {
-	b.isCallValid()
+func (b *RDBuilder) Length() uint16 {
+	return uint16(b.length())
+}
+
+func (b *RDBuilder) length() int {
 	return b.fixup.rDataLength(b.b)
 }
 
+// End finalizes the resource data building process and reflects the changes made using the RDBuilder in the Builder.
+// This method must be called after writing the entire resource data is done.
+// Attempting to use the RDBuilder after calling End might lead to panics.
+func (b *RDBuilder) End() {
+	b.b.fakeBufSize = math.MaxInt
+	b.b.curSection &= ^sectionDetachedMask
+	b.fixup.fixup(b.b)
+	*b.count++
+	b.b = nil
+}
+
 // Remove removes the resource from the message.
+// Attempting to use the RDBuilder after calling Remove might lead to panics.
 func (b *RDBuilder) Remove() {
-	b.isCallValid()
-	b.b.removeResourceHeader(b.hdrOffset)
+	b.b.fakeBufSize = math.MaxInt
+	b.b.curSection &= ^sectionDetachedMask
+	b.b.nb.removeNamesFromCompressionMap(b.b.headerStartOffset, b.hdrOffset)
+	b.b.buf = b.b.buf[:b.hdrOffset]
+	b.b = nil
 }
 
 // Name appends a DNS name to the resource data.
@@ -906,8 +992,6 @@ func (b *RDBuilder) Remove() {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Name(name RawName, compress bool) error {
-	b.isCallValid()
-
 	nameOffset := len(b.b.buf)
 	var err error
 	b.b.buf, err = b.b.nb.appendName(b.b.buf, b.b.maxBufSize, b.b.headerStartOffset, name, compress)
@@ -920,8 +1004,6 @@ func (b *RDBuilder) Name(name RawName, compress bool) error {
 		b.b.buf = b.b.buf[:nameOffset]
 		return errResourceTooLong
 	}
-
-	b.fixup.fixup(b.b)
 	return nil
 }
 
@@ -932,15 +1014,13 @@ func (b *RDBuilder) Name(name RawName, compress bool) error {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Bytes(raw []byte) error {
-	b.isCallValid()
-	if b.Length()+len(raw) > math.MaxUint16 {
+	if b.length()+len(raw) > math.MaxUint16 {
 		return errResourceTooLong
 	}
 	if len(b.b.buf)+len(raw) > b.b.maxBufSize {
 		return ErrTruncated
 	}
 	b.b.buf = append(b.b.buf, raw...)
-	b.fixup.fixup(b.b)
 	return nil
 }
 
@@ -951,15 +1031,13 @@ func (b *RDBuilder) Bytes(raw []byte) error {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint8(val uint8) error {
-	b.isCallValid()
-	if b.Length()+1 > math.MaxUint16 {
+	if b.length()+1 > math.MaxUint16 {
 		return errResourceTooLong
 	}
 	if len(b.b.buf)+1 > b.b.maxBufSize {
 		return ErrTruncated
 	}
 	b.b.buf = append(b.b.buf, val)
-	b.fixup.fixup(b.b)
 	return nil
 }
 
@@ -970,15 +1048,13 @@ func (b *RDBuilder) Uint8(val uint8) error {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint16(val uint16) error {
-	b.isCallValid()
-	if b.Length()+2 > math.MaxUint16 {
+	if b.length()+2 > math.MaxUint16 {
 		return errResourceTooLong
 	}
 	if len(b.b.buf)+2 > b.b.maxBufSize {
 		return ErrTruncated
 	}
 	b.b.buf = appendUint16(b.b.buf, val)
-	b.fixup.fixup(b.b)
 	return nil
 }
 
@@ -989,15 +1065,13 @@ func (b *RDBuilder) Uint16(val uint16) error {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint32(val uint32) error {
-	b.isCallValid()
-	if b.Length()+4 > math.MaxUint16 {
+	if b.length()+4 > math.MaxUint16 {
 		return errResourceTooLong
 	}
 	if len(b.b.buf)+4 > b.b.maxBufSize {
 		return ErrTruncated
 	}
 	b.b.buf = appendUint32(b.b.buf, val)
-	b.fixup.fixup(b.b)
 	return nil
 }
 
@@ -1008,36 +1082,14 @@ func (b *RDBuilder) Uint32(val uint32) error {
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
 func (b *RDBuilder) Uint64(val uint64) error {
-	b.isCallValid()
-	if b.Length()+8 > math.MaxUint16 {
+	if b.length()+8 > math.MaxUint16 {
 		return errResourceTooLong
 	}
 	if len(b.b.buf)+8 > b.b.maxBufSize {
 		return ErrTruncated
 	}
 	b.b.buf = appendUint64(b.b.buf, val)
-	b.fixup.fixup(b.b)
 	return nil
-}
-
-// RDBuilder craeates a new [RDBuilder], used for building custom resource data.
-// It errors when the amount of resources in the current section is equal to 65535.
-//
-// Note: The returned RDBuilder should not be used after creating any new resource in b.
-// Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
-//
-// The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
-	hdr.Length = 0
-	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
-	if err != nil {
-		return RDBuilder{}, err
-	}
-	return RDBuilder{
-		b:         b,
-		fixup:     f,
-		hdrOffset: hdrOffset,
-	}, nil
 }
 
 const (
