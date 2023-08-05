@@ -489,8 +489,8 @@ type RDParser struct {
 }
 
 // Length returns the remaining bytes in the resource data.
-func (p *RDParser) Length() int {
-	return p.maxOffset - p.offset
+func (p *RDParser) Length() uint16 {
+	return uint16(p.maxOffset - p.offset)
 }
 
 // End checks if there is any remaining data in the resource data being parsed.
