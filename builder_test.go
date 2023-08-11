@@ -451,6 +451,26 @@ func TestAppendName(t *testing.T) {
 			),
 		},
 		{
+			name: "multiple names, removeNamesFromCompressionMap, with fake name",
+			build: func() []byte {
+				b := nameBuilderState{}
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("smtp.example.net."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				b.removeNamesFromCompressionMap(0, headerLen)
+				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, MustNewRawName("smtp.example.net."), true)
+				buf = append(buf, 3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				return buf
+			},
+			expect: append(
+				make([]byte, headerLen),
+				4, 's', 'm', 't', 'p', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'n', 'e', 't', 0,
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+			),
+		},
+		{
 			name: "after first name, removeNamesFromCompressionMap",
 			build: func() []byte {
 				b := nameBuilderState{}

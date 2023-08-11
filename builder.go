@@ -1263,12 +1263,11 @@ func (m *nameBuilderState) appendName(msg []byte, msgSizeLimit, headerStartOffse
 }
 
 func (m *nameBuilderState) removeNamesFromCompressionMap(headerStartOffset, namesStartOffset int) {
-	if namesStartOffset == headerLen+headerStartOffset {
-		m.firstNameLength = 0
-		return
-	}
 	if namesStartOffset <= maxPtr {
 		m.invalidPtrsAfter = uint16(namesStartOffset)
+		if namesStartOffset == headerLen+headerStartOffset {
+			m.firstNameLength = 0
+		}
 	}
 }
 
