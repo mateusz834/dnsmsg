@@ -763,23 +763,18 @@ func FuzzAppendName(f *testing.F) {
 				t.Logf("%v: removeLastNamesCount: %v", i, removeLastNamesCount)
 			}
 
-			removeOffsets := nameOffsets[len(nameOffsets)-removeLastNamesCount:]
-			removeNames := appendedNames[len(appendedNames)-removeLastNamesCount:]
-			nameOffsets = nameOffsets[:len(nameOffsets)-removeLastNamesCount]
-			appendedNames = appendedNames[:len(appendedNames)-removeLastNamesCount]
-
-			for j := len(removeOffsets) - 1; j >= 0; j-- {
-				offset := removeOffsets[j]
-				name := removeNames[j]
+			if len(nameOffsets) > 0 && removeLastNamesCount > 0 {
+				removeOffset := nameOffsets[len(nameOffsets)-removeLastNamesCount]
+				removeNames := appendedNames[len(appendedNames)-removeLastNamesCount:]
+				nameOffsets = nameOffsets[:len(nameOffsets)-removeLastNamesCount]
+				appendedNames = appendedNames[:len(appendedNames)-removeLastNamesCount]
 
 				if debugFuzz {
-					t.Logf("%v: removing last name: %#v at offset: %v", i, name, offset)
+					t.Logf("removing names: %#v at starting offset: %v", removeNames, removeOffset)
 				}
-				b.removeNamesFromCompressionMap(0, offset)
-				got = got[:offset]
-				if debugFuzz && j != 0 {
-					t.Logf("%v: buf: %v", i, got)
-				}
+
+				b.removeNamesFromCompressionMap(0, removeOffset)
+				got = got[:removeOffset]
 			}
 
 			if debugFuzz {
