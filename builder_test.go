@@ -490,6 +490,30 @@ func TestAppendName(t *testing.T) {
 				3, 'w', 'w', 'w', 0xC0, 17,
 			),
 		},
+		{
+			name: "removeNamesFromCompressionMap with headerStartOffset",
+			build: func() []byte {
+				b := nameBuilderState{}
+				headerStartOffset := 4
+				buf := make([]byte, headerStartOffset+headerLen)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("example.com."), false)
+				offset := len(buf)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("w.example.com."), true)
+				b.removeNamesFromCompressionMap(headerStartOffset, offset)
+				buf = buf[:offset]
+				buf = append(buf, 1, 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("w.example.com."), true)
+				return buf
+			},
+			expect: append(
+				make([]byte, 4+headerLen),
+				3, 'c', 'o', 'm', 0,
+				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				1, 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
+				1, 'w', 0xC0, 17,
+			),
+		},
 	}
 
 	for _, tt := range cases {
@@ -500,32 +524,7 @@ func TestAppendName(t *testing.T) {
 	}
 }
 
-type testName struct {
-	name                 string
-	incMaxBufLen         uint16
-	removeLastNamesCount uint16
-	compress             bool
-}
-
-func randStringNames(rand []byte) []testName {
-	var out []testName
-	for len(rand) >= 9 {
-		nameCharCount := int(binary.BigEndian.Uint32(rand[5:9]))
-		if nameCharCount > len(rand[9:]) {
-			nameCharCount = len(rand[9:])
-		}
-		out = append(out, testName{
-			name:                 string(rand[9 : 9+nameCharCount]),
-			incMaxBufLen:         binary.BigEndian.Uint16(rand[0:2]),
-			removeLastNamesCount: binary.BigEndian.Uint16(rand[2:4]),
-			compress:             rand[5] < 127,
-		})
-		rand = rand[9+nameCharCount:]
-	}
-	return out
-}
-
-func testAppendCompressed(buf []byte, maxBufSize int, compression map[string]uint16, name RawName, compress bool) ([]byte, error) {
+func testAppendCompressed(buf []byte, headerStartOffset, maxBufSize int, compression map[string]uint16, name RawName, compress bool) ([]byte, error) {
 	if len(buf) < headerLen {
 		panic("invalid use of testAppendCompressed")
 	}
@@ -535,9 +534,9 @@ func testAppendCompressed(buf []byte, maxBufSize int, compression map[string]uin
 	// The nameBuilderState has an optimization (only for the first name),
 	// that as a side effect allows compressing not only on label length boundry.
 	defer func(bufStartLength int) {
-		if compressFirstName && bufStartLength == headerLen {
+		if compressFirstName && bufStartLength-headerStartOffset == headerLen {
 			for i := 0; i < len(name)-1; i++ {
-				compression[string(name[i:])] = uint16(bufStartLength + i)
+				compression[string(name[i:])] = uint16(bufStartLength + i - headerStartOffset)
 			}
 		}
 	}(len(buf))
@@ -555,8 +554,8 @@ func testAppendCompressed(buf []byte, maxBufSize int, compression map[string]uin
 			buf = append(buf, name[:i]...)
 			return appendUint16(buf, ptr|0xC000), nil
 		}
-		if !ok && len(buf)+i <= maxPtr {
-			compression[string(name[i:])] = uint16(len(buf) + i)
+		if !ok && (len(buf)+i-headerStartOffset) <= maxPtr {
+			compression[string(name[i:])] = uint16(len(buf) + i - headerStartOffset)
 		}
 	}
 
@@ -571,7 +570,8 @@ func testAppendCompressed(buf []byte, maxBufSize int, compression map[string]uin
 }
 
 func testRemoveLastlyCompressedName(msg []byte, compression map[string]uint16, headerStartOffset int, nameOffset int, name []byte) {
-	if nameOffset == headerLen+headerStartOffset {
+	nameOffset -= headerStartOffset
+	if nameOffset == headerLen {
 		for i := 0; i < len(name)-1; i++ {
 			ptr, ok := compression[string(name[i:])]
 			if ok && int(ptr) >= nameOffset {
@@ -593,7 +593,26 @@ func testRemoveLastlyCompressedName(msg []byte, compression map[string]uint16, h
 
 func FuzzAppendName(f *testing.F) {
 	f.Fuzz(func(t *testing.T, rand []byte) {
-		names := randStringNames(rand)
+		type testName struct {
+			name                 string
+			incMaxBufLen         uint16
+			removeLastNamesCount uint16
+			compress             bool
+		}
+
+		r := fuzzRand{t, rand}
+		var names []testName
+		for r.bool() {
+			names = append(names, testName{
+				name:                 string(r.arbitraryAmountOfBytes()),
+				incMaxBufLen:         r.uint16(),
+				removeLastNamesCount: r.uint16(),
+				compress:             r.bool(),
+			})
+		}
+
+		headerStartOffset := int(r.uint16())
+
 		for _, name := range names {
 			n, err := NewRawName(name.name)
 			if err != nil {
@@ -614,8 +633,12 @@ func FuzzAppendName(f *testing.F) {
 			}
 		}
 
+		if debugFuzz {
+			t.Logf("headerStartOffset: %v", headerStartOffset)
+		}
+
 		var (
-			expect      = make([]byte, headerLen, 1024)
+			expect      = make([]byte, headerStartOffset+headerLen, headerStartOffset+1024)
 			maxBufSize  = len(expect)
 			compression = make(map[string]uint16)
 		)
@@ -624,7 +647,7 @@ func FuzzAppendName(f *testing.F) {
 		var appendedNames []string
 
 		if debugFuzz {
-			t.Logf("appending name to expect slice: %v", expect)
+			t.Logf("appending name to expect slice, len(expect) = %v", len(expect))
 		}
 
 		for i, name := range names {
@@ -637,10 +660,10 @@ func FuzzAppendName(f *testing.F) {
 
 			var err error
 			offset := len(expect)
-			expect, err = testAppendCompressed(expect, maxBufSize, compression, MustNewRawName(name.name), name.compress)
+			expect, err = testAppendCompressed(expect, headerStartOffset, maxBufSize, compression, MustNewRawName(name.name), name.compress)
 
 			if debugFuzz {
-				t.Logf("%v: offset: %v, buf: %v, err: %v", i, offset, expect, err)
+				t.Logf("%v: offset: %v, buf[headerStartOffset:]: %v, err: %v", i, offset, expect[headerStartOffset:], err)
 			}
 
 			if err != nil && len(expect) != offset {
@@ -648,7 +671,7 @@ func FuzzAppendName(f *testing.F) {
 			}
 
 			for _, ptr := range compression {
-				if int(ptr) >= len(expect) {
+				if int(ptr) >= len(expect)-headerStartOffset {
 					t.Fatalf("stale entry found in compression map with ptr: %v", ptr)
 				}
 			}
@@ -682,10 +705,10 @@ func FuzzAppendName(f *testing.F) {
 				if debugFuzz {
 					t.Logf("%v: removing last name: %#v at offset: %v", i, name, offset)
 				}
-				testRemoveLastlyCompressedName(expect, compression, 0, offset, MustNewRawName(name))
+				testRemoveLastlyCompressedName(expect, compression, headerStartOffset, offset, MustNewRawName(name))
 				expect = expect[:offset]
 				if debugFuzz && j != 0 {
-					t.Logf("%v: buf: %v", i, expect)
+					t.Logf("%v: buf[headerStartOffset:]: %v", i, expect[headerStartOffset:])
 				}
 
 				for _, ptr := range compression {
@@ -696,17 +719,17 @@ func FuzzAppendName(f *testing.F) {
 			}
 
 			if debugFuzz {
-				t.Logf("%v: buf: %v", i, expect)
+				t.Logf("%v: buf[headerStartOffset:]: %v", i, expect[headerStartOffset:])
 				t.Log()
 			}
 		}
 
-		p, _, _ := Parse(expect)
+		p, _, _ := Parse(expect[headerStartOffset:])
 		for p.curOffset != len(p.msg) {
 			expectName := appendedNames[0]
 			appendedNames = appendedNames[1:]
 
-			expectedNameOffset := nameOffsets[0]
+			expectedNameOffset := nameOffsets[0] - headerStartOffset
 			nameOffsets = nameOffsets[1:]
 
 			name, n, err := p.unpackName(p.curOffset)
@@ -722,14 +745,14 @@ func FuzzAppendName(f *testing.F) {
 			p.curOffset += int(n)
 		}
 
-		got := make([]byte, headerLen, 1024)
+		got := make([]byte, headerStartOffset+headerLen, headerStartOffset+1024)
 		b := nameBuilderState{}
 		nameOffsets = nil
 		appendedNames = nil
 		maxBufSize = len(got)
 
 		if debugFuzz {
-			t.Logf("appending name to got slice: %v", got)
+			t.Logf("appending name to got slice, len(got) = %v", len(got))
 		}
 		for i, name := range names {
 			maxBufSize += int(name.incMaxBufLen)
@@ -740,9 +763,9 @@ func FuzzAppendName(f *testing.F) {
 
 			var err error
 			offset := len(got)
-			got, err = b.appendName(got, maxBufSize, 0, MustNewRawName(name.name), name.compress)
+			got, err = b.appendName(got, maxBufSize, headerStartOffset, MustNewRawName(name.name), name.compress)
 			if debugFuzz {
-				t.Logf("%v: offset: %v, buf: %v, err: %v", i, offset, got, err)
+				t.Logf("%v: offset: %v, buf[headerStartOffset:]: %v, err: %v", i, offset, got[headerStartOffset:], err)
 			}
 
 			if err != nil && len(got) != offset {
@@ -773,18 +796,21 @@ func FuzzAppendName(f *testing.F) {
 					t.Logf("removing names: %#v at starting offset: %v", removeNames, removeOffset)
 				}
 
-				b.removeNamesFromCompressionMap(0, removeOffset)
+				b.removeNamesFromCompressionMap(headerStartOffset, removeOffset)
 				got = got[:removeOffset]
 			}
 
 			if debugFuzz {
-				t.Logf("%v: buf: %v", i, got)
+				t.Logf("%v: buf[headerStartOffset:]: %v", i, got[headerStartOffset:])
 				t.Log()
 			}
 		}
 
 		if !bytes.Equal(got, expect) {
-			t.Fatalf("failed while appending names: %#v\n\tgot:      %v\n\texpected: %v", names, got, expect)
+			t.Fatalf(
+				"failed while appending names: %#v\n\tgot[headerStartOffset:]:      %v\n\texpected[headerStartOffset:]: %v",
+				names, got[headerStartOffset:], expect[headerStartOffset:],
+			)
 		}
 	})
 }
