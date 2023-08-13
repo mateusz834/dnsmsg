@@ -1044,6 +1044,15 @@ func TestParserInvalidOperation(t *testing.T) {
 		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
 		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
 		b.ResourceMX(hdr, ResourceMX[RawName]{Pref: 100, MX: MustNewRawName("smtp.example.com")})
+		b.ResourceOPT(hdr, ResourceOPT{Options: []EDNS0Option{
+			&EDNS0ClientSubnet{Family: AddressFamilyIPv4, SourcePrefixLength: 2, ScopePrefixLength: 3, Address: []byte{192, 0, 2, 1}},
+			&EDNS0Cookie{
+				ClientCookie:                 [8]byte{21, 200, 93, 34, 5, 219, 17, 28},
+				ServerCookie:                 [32]byte{1, 2, 3, 4, 5, 6, 7, 99, 234, 139, 99, 119},
+				ServerCookieAdditionalLength: 12,
+			},
+			&EDNS0ExtendedDNSError{InfoCode: 1, ExtraText: []byte("some error Text")},
+		}})
 	}
 
 	p, hdr, err := Parse(b.Bytes())
@@ -1051,7 +1060,7 @@ func TestParserInvalidOperation(t *testing.T) {
 		t.Fatalf("Parse() unexpected error: %v", err)
 	}
 
-	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeSOA, TypePTR, TypeTXT, TypeCNAME, TypeMX}
+	knownResourceTypes := []Type{TypeA, TypeAAAA, TypeNS, TypeSOA, TypePTR, TypeTXT, TypeCNAME, TypeMX, TypeOPT}
 	parseResource := func(p *Parser, resType Type) error {
 		switch resType {
 		case TypeA:
@@ -1070,6 +1079,8 @@ func TestParserInvalidOperation(t *testing.T) {
 			_, err = p.ResourceCNAME()
 		case TypeMX:
 			_, err = p.ResourceMX()
+		case TypeOPT:
+			_, err = p.ResourceOPT()
 		default:
 			panic("unknown resource")
 		}
@@ -1363,6 +1374,8 @@ func FuzzParser(f *testing.F) {
 						var txt RawResourceTXT
 						txt, err = p.RawResourceTXT()
 						txt.ToResourceTXT()
+					case TypeOPT:
+						_, err = p.ResourceOPT()
 					default:
 						err = p.SkipResourceData()
 					}

@@ -37,7 +37,7 @@ func MakeQuery[T RawName | ParserName | Name | SearchName](msg []byte, id uint16
 	return msg
 }
 
-func MakeQueryWithEDNS0[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T], ends0 EDNS0) []byte {
+func MakeQueryWithEDNS0Header[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T], edns0 EDNS0Header) []byte {
 	// Header
 	msg = appendUint16(msg, id)
 	msg = appendUint16(msg, uint16(flags))
@@ -54,10 +54,9 @@ func MakeQueryWithEDNS0[T RawName | ParserName | Name | SearchName](msg []byte, 
 	// EDNS0
 	msg = append(msg, 0) // root name
 	msg = appendUint16(msg, uint16(TypeOPT))
-	msg = appendUint16(msg, ends0.Payload)
+	msg = appendUint16(msg, uint16(edns0.Payload))
 
-	// TODO: support rest of EDNS0 stuff.
-	msg = appendUint32(msg, 0)
+	msg = appendUint32(msg, uint32(edns0.PartialExtendedRCode)<<24|uint32(edns0.Version)<<16|uint32(edns0.ExtendedFlags))
 	msg = appendUint16(msg, 0)
 	return msg
 }
@@ -460,6 +459,8 @@ const (
 //
 // The zero value of this type shouldn't be used.
 type Builder struct {
+	_ noCopy
+
 	buf []byte
 	nb  nameBuilderState
 
@@ -947,6 +948,8 @@ func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
 // Note: The returned RDBuilder should not be used after creating any new resource in the [Builder].
 // Once a resource is created using the RDBuilder, attempting to use the same RDBuilder might lead to panics.
 type RDBuilder struct {
+	_ noCopy
+
 	b         *Builder
 	count     *uint16
 	fixup     headerLengthFixup

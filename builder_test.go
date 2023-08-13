@@ -922,6 +922,15 @@ func TestBuilder(t *testing.T) {
 		}
 		resourceCNAME = ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")}
 		resourceMX    = ResourceMX[RawName]{Pref: 54831, MX: MustNewRawName("smtp.example.com")}
+		resourceOPT   = ResourceOPT{Options: []EDNS0Option{
+			&EDNS0ClientSubnet{Family: AddressFamilyIPv4, SourcePrefixLength: 2, ScopePrefixLength: 3, Address: []byte{192, 0, 2, 1}},
+			&EDNS0Cookie{
+				ClientCookie:                 [8]byte{21, 200, 93, 34, 5, 219, 17, 28},
+				ServerCookie:                 [32]byte{1, 2, 3, 4, 5, 6, 7, 99, 234, 139, 99, 119},
+				ServerCookieAdditionalLength: 12,
+			},
+			&EDNS0ExtendedDNSError{InfoCode: 1, ExtraText: []byte("some error Text")},
+		}}
 	)
 
 	sectionNames := []string{"Answers", "Authorities", "Additionals"}
@@ -972,6 +981,11 @@ func TestBuilder(t *testing.T) {
 		testAfterAppend(sectionName)
 
 		if err := b.ResourceMX(rhdr, resourceMX); err != nil {
+			t.Fatalf("%v section, b.ResourceMX() unexpected error: %v", sectionName, err)
+		}
+		testAfterAppend(sectionName)
+
+		if err := b.ResourceOPT(rhdr, resourceOPT); err != nil {
 			t.Fatalf("%v section, b.ResourceMX() unexpected error: %v", sectionName, err)
 		}
 		testAfterAppend(sectionName)
@@ -1105,6 +1119,18 @@ func TestBuilder(t *testing.T) {
 			t.Fatalf("%v section, p.ResourceMX(): unexpected error: %v", curSectionName, err)
 		}
 		equalRData(t, "p.ResourceMX()", resourceMX, resMX)
+
+		parseResourceHeader(curSectionName, TypeOPT, ClassIN, 3600)
+		resOPT, err := p.ResourceOPT()
+		if err != nil {
+			t.Fatalf("%v section, p.ResourceOPT(): unexpected error: %v", curSectionName, err)
+		}
+		if len(resOPT.Options) != len(resourceOPT.Options) {
+			t.Fatalf("%v section, p.ResourceOPT() = %#v, want: %#v", curSectionName, resOPT, resourceOPT)
+		}
+		for i := 0; i < len(resOPT.Options); i++ {
+			equalRData(t, fmt.Sprintf("p.ResourceOPT().Options[%v]", i), resourceOPT.Options[i], resOPT.Options[i])
+		}
 	}
 
 	if err := p.End(); err != nil {
@@ -1115,6 +1141,11 @@ func TestBuilder(t *testing.T) {
 func equalRData(t *testing.T, name string, r1, r2 any) {
 	r1val := reflect.ValueOf(r1)
 	r2val := reflect.ValueOf(r2)
+
+	if r1val.Kind() == reflect.Pointer {
+		r1val = r1val.Elem()
+		r2val = r2val.Elem()
+	}
 
 	if r1val.NumField() != r2val.NumField() {
 		t.Fatal("different amount of fields")
@@ -1897,6 +1928,34 @@ func FuzzBuilder(f *testing.F) {
 					if debugFuzz {
 						t.Logf("b.ResourceMX(%#v, %#v) = %v", hdr, res, err)
 					}
+				case 9:
+					res := ResourceOPT{}
+					for r.bool() {
+						switch r.uint8() {
+						case 0:
+							res.Options = append(res.Options, &EDNS0ClientSubnet{
+								Family:             AddressFamily(r.uint8()),
+								SourcePrefixLength: r.uint8(),
+								ScopePrefixLength:  r.uint8(),
+								Address:            r.arbitraryAmountOfBytes(),
+							})
+						case 2:
+							res.Options = append(res.Options, &EDNS0Cookie{
+								ClientCookie:                 [8]byte(r.bytes(8)),
+								ServerCookie:                 [32]byte(r.bytes(32)),
+								ServerCookieAdditionalLength: r.uint8(),
+							})
+						case 3:
+							res.Options = append(res.Options, &EDNS0ExtendedDNSError{
+								InfoCode:  ExtendedDNSErrorCode(r.uint16()),
+								ExtraText: r.arbitraryAmountOfBytes(),
+							})
+						}
+					}
+					err = b.ResourceOPT(hdr, res)
+					if debugFuzz {
+						t.Logf("b.ResourceOPT(%#v, %#v) = %v", hdr, res, err)
+					}
 				default:
 					continue nextSection
 				}
@@ -1977,6 +2036,8 @@ func FuzzBuilder(f *testing.F) {
 					_, err = p.ResourceMX()
 				case TypeTXT:
 					_, err = p.RawResourceTXT()
+				case TypeOPT:
+					_, err = p.ResourceOPT()
 				default:
 					err = p.SkipResourceData()
 				}

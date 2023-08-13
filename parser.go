@@ -729,10 +729,13 @@ func (m *ParserName) Equal(m2 *ParserName) bool {
 		if !caseInsensitiveEqual(m.m.msg[im1:im1+length], m2.m.msg[im2:im2+length]) {
 			return false
 		}
-
 		im1 += length
 		im2 += length
 	}
+}
+
+func (m *ParserName) isRoot() bool {
+	return m.rawLen == 1
 }
 
 // EqualName reports whether m and m2 represents the same name.

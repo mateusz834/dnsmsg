@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-type EDNS0 struct {
-	Payload uint16
-}
-
 type Type uint16
 
 func (t Type) String() string {
@@ -290,3 +286,8 @@ func (r RawResourceTXT) String() string {
 type ResourceAAAA struct {
 	AAAA [16]byte
 }
+
+type noCopy struct{}
+
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
