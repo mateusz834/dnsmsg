@@ -1112,6 +1112,10 @@ func TestParserInvalidOperation(t *testing.T) {
 		}
 	}
 
+	if err := p.End(); err != errInvalidOperation {
+		t.Fatalf("p.End() unexpected error: %v, want: %v", err, errInvalidOperation)
+	}
+
 	_, err = p.Question()
 	if err != nil {
 		t.Fatal(err)
@@ -1139,6 +1143,10 @@ func TestParserInvalidOperation(t *testing.T) {
 		if err := next(); err != errInvalidOperation {
 			t.Fatalf("p.Start%v(): %v, want: %v", sectionNames[i+2], err, errInvalidOperation)
 		}
+	}
+
+	if err := p.End(); err != errInvalidOperation {
+		t.Fatalf("p.End() unexpected error: %v, want: %v", err, errInvalidOperation)
 	}
 
 	expectCounts := []uint16{hdr.ANCount, hdr.NSCount, hdr.ARCount}
@@ -1199,6 +1207,10 @@ func TestParserInvalidOperation(t *testing.T) {
 				t.Fatalf("%v section, p.ResourceHeader() unexpected error: %v", sectionName, err)
 			}
 
+			if err := p.End(); err != errInvalidOperation {
+				t.Fatalf("%v section, p.End() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
+			}
+
 			_, err = p.ResourceHeader()
 			if err != errInvalidOperation {
 				t.Fatalf("%v section, p.ResourceHeader() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
@@ -1224,6 +1236,10 @@ func TestParserInvalidOperation(t *testing.T) {
 						t.Fatalf("%v section, parseResource unexpected error while parsing %v resource: %v, want: %v", sectionName, tt, err, errInvalidOperation)
 					}
 				}
+			}
+
+			if err := p.End(); err != errInvalidOperation {
+				t.Fatalf("%v section, p.End() unexpected error: %v, want: %v", sectionName, err, errInvalidOperation)
 			}
 
 			if err := parseResource(&p, rhdr.Type); err != nil {

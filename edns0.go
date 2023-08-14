@@ -522,7 +522,7 @@ func (p *Parser) ResourceOPT() (ResourceOPT, error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeOPT].
 func (m *Parser) ResourceOPTParser() (ResourceOPTParser, error) {
-	if !m.resourceData || m.nextResourceType != TypeOPT {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeOPT {
 		return ResourceOPTParser{}, errInvalidOperation
 	}
 
@@ -530,7 +530,7 @@ func (m *Parser) ResourceOPTParser() (ResourceOPTParser, error) {
 		return ResourceOPTParser{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	offset := m.curOffset
 	m.curOffset += int(m.nextResourceDataLength)
 	return ResourceOPTParser{

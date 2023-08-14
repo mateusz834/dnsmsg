@@ -34,12 +34,15 @@ func Parse(msg []byte) (Parser, Header, error) {
 	hdr.unpack([headerLen]byte(msg[:headerLen]))
 
 	return Parser{
-		msg:                   msg,
-		curOffset:             headerLen,
-		remainingQuestions:    hdr.QDCount,
-		remainingAnswers:      hdr.ANCount,
-		remainingAuthorites:   hdr.NSCount,
-		remainingAddtitionals: hdr.ARCount,
+		msg:       msg,
+		curOffset: headerLen,
+		counts: [4]uint16{
+			hdr.QDCount,
+			hdr.ANCount,
+			hdr.NSCount,
+			hdr.ARCount,
+		},
+		remainingCurSectionCount: hdr.QDCount,
 	}, hdr, nil
 }
 
@@ -61,23 +64,22 @@ type Parser struct {
 
 	nextResourceDataLength uint16
 	nextResourceType       Type
-	resourceData           bool
+	rhdrNameLength         uint8
 	curSection             section
 
-	remainingQuestions    uint16
-	remainingAnswers      uint16
-	remainingAuthorites   uint16
-	remainingAddtitionals uint16
+	remainingCurSectionCount uint16
+	counts                   [4]uint16
 }
 
 // StartAnswers changes the parsing section from questions to answers.
 //
 // Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAnswers() error {
-	if p.curSection != sectionQuestions || p.resourceData || p.remainingQuestions != 0 {
+	if p.curSection != sectionQuestions || p.remainingCurSectionCount != 0 {
 		return errInvalidOperation
 	}
 	p.curSection = sectionAnswers
+	p.remainingCurSectionCount = p.counts[sectionAnswers]
 	return nil
 }
 
@@ -85,10 +87,11 @@ func (p *Parser) StartAnswers() error {
 //
 // Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAuthorities() error {
-	if p.curSection != sectionAnswers || p.resourceData || p.remainingAnswers != 0 {
+	if p.curSection != sectionAnswers || p.rhdrNameLength != 0 || p.remainingCurSectionCount != 0 {
 		return errInvalidOperation
 	}
 	p.curSection = sectionAuthorities
+	p.remainingCurSectionCount = p.counts[sectionAuthorities]
 	return nil
 }
 
@@ -96,10 +99,11 @@ func (p *Parser) StartAuthorities() error {
 //
 // Returns error when the parsing of the current section is not yet completed.
 func (p *Parser) StartAdditionals() error {
-	if p.curSection != sectionAuthorities || p.resourceData || p.remainingAuthorites != 0 {
+	if p.curSection != sectionAuthorities || p.rhdrNameLength != 0 || p.remainingCurSectionCount != 0 {
 		return errInvalidOperation
 	}
 	p.curSection = sectionAdditionals
+	p.remainingCurSectionCount = p.counts[sectionAdditionals]
 	return nil
 }
 
@@ -143,8 +147,12 @@ func (p *Parser) SkipResources() error {
 // This method should only be called when parsing of all sections is completed, when
 // there is nothing left to parse.
 func (p *Parser) End() error {
-	if p.resourceData || p.remainingQuestions != 0 || p.remainingAnswers != 0 ||
-		p.remainingAuthorites != 0 || p.remainingAddtitionals != 0 {
+	for _, v := range p.counts[(p.curSection%4)+1:] {
+		if v != 0 {
+			return errInvalidOperation
+		}
+	}
+	if p.rhdrNameLength != 0 || p.remainingCurSectionCount != 0 {
 		return errInvalidOperation
 	}
 	if len(p.msg) != p.curOffset {
@@ -162,7 +170,7 @@ func (m *Parser) Question() (Question[ParserName], error) {
 		return Question[ParserName]{}, errInvalidOperation
 	}
 
-	if m.remainingQuestions == 0 {
+	if m.remainingCurSectionCount == 0 {
 		return Question[ParserName]{}, ErrSectionDone
 	}
 
@@ -178,7 +186,7 @@ func (m *Parser) Question() (Question[ParserName], error) {
 	}
 
 	m.curOffset = tmpOffset + 4
-	m.remainingQuestions--
+	m.remainingCurSectionCount--
 
 	return Question[ParserName]{
 		Name:  name,
@@ -200,23 +208,11 @@ func (m *Parser) Question() (Question[ParserName], error) {
 //
 // The parsing section must not be set to questions.
 func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
-	if m.resourceData {
+	if m.rhdrNameLength != 0 || m.curSection == sectionQuestions {
 		return ResourceHeader[ParserName]{}, errInvalidOperation
 	}
 
-	var count *uint16
-	switch m.curSection {
-	case sectionAnswers:
-		count = &m.remainingAnswers
-	case sectionAuthorities:
-		count = &m.remainingAuthorites
-	case sectionAdditionals:
-		count = &m.remainingAddtitionals
-	default:
-		return ResourceHeader[ParserName]{}, errInvalidOperation
-	}
-
-	if *count == 0 {
+	if m.remainingCurSectionCount == 0 {
 		return ResourceHeader[ParserName]{}, ErrSectionDone
 	}
 
@@ -241,10 +237,10 @@ func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 
 	m.nextResourceDataLength = hdr.Length
 	m.nextResourceType = hdr.Type
-	m.resourceData = true
+	m.rhdrNameLength = uint8(offset)
 
 	m.curOffset = tmpOffset + 10
-	*count--
+	m.remainingCurSectionCount--
 
 	return hdr, nil
 }
@@ -254,14 +250,14 @@ func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeA].
 func (m *Parser) ResourceA() (ResourceA, error) {
-	if !m.resourceData || m.nextResourceType != TypeA {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeA {
 		return ResourceA{}, errInvalidOperation
 	}
 	if m.nextResourceDataLength != 4 || len(m.msg)-m.curOffset < 4 {
 		return ResourceA{}, errInvalidDNSMessage
 	}
 	a := [4]byte(m.msg[m.curOffset:])
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += 4
 	return ResourceA{
 		A: a,
@@ -273,14 +269,14 @@ func (m *Parser) ResourceA() (ResourceA, error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeAAAA].
 func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
-	if !m.resourceData || m.nextResourceType != TypeAAAA {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeAAAA {
 		return ResourceAAAA{}, errInvalidOperation
 	}
 	if m.nextResourceDataLength != 16 || len(m.msg)-m.curOffset < 16 {
 		return ResourceAAAA{}, errInvalidDNSMessage
 	}
 	aaaa := [16]byte(m.msg[m.curOffset:])
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += 16
 	return ResourceAAAA{
 		AAAA: aaaa,
@@ -292,7 +288,7 @@ func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeNS].
 func (m *Parser) ResourceNS() (ResourceNS[ParserName], error) {
-	if !m.resourceData || m.nextResourceType != TypeNS {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeNS {
 		return ResourceNS[ParserName]{}, errInvalidOperation
 	}
 
@@ -305,7 +301,7 @@ func (m *Parser) ResourceNS() (ResourceNS[ParserName], error) {
 		return ResourceNS[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += int(offset)
 	return ResourceNS[ParserName]{ns}, nil
 }
@@ -315,7 +311,7 @@ func (m *Parser) ResourceNS() (ResourceNS[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeCNAME].
 func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
-	if !m.resourceData || m.nextResourceType != TypeCNAME {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeCNAME {
 		return ResourceCNAME[ParserName]{}, errInvalidOperation
 	}
 
@@ -328,7 +324,7 @@ func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
 		return ResourceCNAME[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += int(offset)
 	return ResourceCNAME[ParserName]{name}, nil
 }
@@ -338,7 +334,7 @@ func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeSOA].
 func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
-	if !m.resourceData || m.nextResourceType != TypeSOA {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeSOA {
 		return ResourceSOA[ParserName]{}, errInvalidOperation
 	}
 
@@ -370,7 +366,7 @@ func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
 		return ResourceSOA[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset = tmpOffset
 	return ResourceSOA[ParserName]{
 		NS:      ns,
@@ -388,7 +384,7 @@ func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypePTR].
 func (m *Parser) ResourcePTR() (ResourcePTR[ParserName], error) {
-	if !m.resourceData || m.nextResourceType != TypePTR {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypePTR {
 		return ResourcePTR[ParserName]{}, errInvalidOperation
 	}
 
@@ -401,7 +397,7 @@ func (m *Parser) ResourcePTR() (ResourcePTR[ParserName], error) {
 		return ResourcePTR[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += int(offset)
 	return ResourcePTR[ParserName]{name}, nil
 }
@@ -411,7 +407,7 @@ func (m *Parser) ResourcePTR() (ResourcePTR[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeMX].
 func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
-	if !m.resourceData || m.nextResourceType != TypeMX {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeMX {
 		return ResourceMX[ParserName]{}, errInvalidOperation
 	}
 
@@ -429,7 +425,7 @@ func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
 		return ResourceMX[ParserName]{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += int(m.nextResourceDataLength)
 	return ResourceMX[ParserName]{
 		Pref: pref,
@@ -442,7 +438,7 @@ func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeTXT].
 func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
-	if !m.resourceData || m.nextResourceType != TypeTXT {
+	if m.rhdrNameLength == 0 || m.nextResourceType != TypeTXT {
 		return RawResourceTXT{}, errInvalidOperation
 	}
 
@@ -455,7 +451,7 @@ func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
 		return RawResourceTXT{}, errInvalidDNSMessage
 	}
 
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	m.curOffset += int(m.nextResourceDataLength)
 	return r, nil
 }
@@ -464,14 +460,14 @@ func (m *Parser) RawResourceTXT() (RawResourceTXT, error) {
 //
 // This method can only be called after calling the [Parser.ResourceHeader] method.
 func (m *Parser) SkipResourceData() error {
-	if !m.resourceData {
+	if m.rhdrNameLength == 0 {
 		return errInvalidOperation
 	}
 	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
 		return errInvalidDNSMessage
 	}
 	m.curOffset += int(m.nextResourceDataLength)
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	return nil
 }
 
@@ -584,7 +580,7 @@ func (p *RDParser) Uint64() (uint64, error) {
 
 // RDParser craeates a new [RDParser], used for parsing custom resource data.
 func (m *Parser) RDParser() (RDParser, error) {
-	if !m.resourceData {
+	if m.rhdrNameLength == 0 {
 		return RDParser{}, errInvalidOperation
 	}
 	if len(m.msg)-m.curOffset < int(m.nextResourceDataLength) {
@@ -592,7 +588,7 @@ func (m *Parser) RDParser() (RDParser, error) {
 	}
 	offset := m.curOffset
 	m.curOffset += int(m.nextResourceDataLength)
-	m.resourceData = false
+	m.rhdrNameLength = 0
 	return RDParser{
 		m:         m,
 		offset:    offset,
