@@ -600,12 +600,6 @@ func (m *Parser) RDParser() (RDParser, error) {
 	}, nil
 }
 
-// ptrLoopCount represents an upper limit of pointers that we
-// accept in a single DNS name.
-// There is still a poosibilitty of a false positive here, but only for names
-// that are badly compressed (pointer to a pointer, pointer to a root name).
-const ptrLoopCount = ((maxEncodedNameLen - 1) / 2)
-
 // ParserName represents a raw DNS name.
 //
 // It references the underlying message referenced by the [Parser], so
@@ -801,30 +795,6 @@ func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
 func (m *ParserName) EqualSearchName(m2 SearchName) bool {
 	c := *m
 	return c.equalName(m2.prefix, true) && c.equalName(m2.suffix, false)
-}
-
-// len(a) must be caseInsensitiveEqual to len(b)
-func caseInsensitiveEqual(a []byte, b []byte) bool {
-	for i := 0; i < len(a); i++ {
-		if !equalASCIICaseInsensitive(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func equalASCIICaseInsensitive(a, b byte) bool {
-	const caseDiff = 'a' - 'A'
-
-	if a >= 'a' && a <= 'z' {
-		a -= caseDiff
-	}
-
-	if b >= 'a' && b <= 'z' {
-		b -= caseDiff
-	}
-
-	return a == b
 }
 
 // String returns the human name encoding of m. Dots inside the label
