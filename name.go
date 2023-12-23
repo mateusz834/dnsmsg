@@ -85,24 +85,7 @@ func (n *NName) String() string {
 
 // Equal return true when n and other represents the same name (case-insensitively).
 func (n *NName) Equal(other *NName) bool {
-	if n.Length != other.Length {
-		return false
-	}
-
-	for i := 0; i < int(n.Length); {
-		labelLength := n.Name[i]
-		if labelLength != other.Name[i] {
-			return false
-		}
-		if labelLength == 0 {
-			return true
-		}
-		i++
-		if !caseInsensitiveEqual(n.Name[i:i+int(labelLength)], other.Name[i:i+int(labelLength)]) {
-			return false
-		}
-		i += int(labelLength)
-	}
-
-	return true
+	// Label Lengths are limited to 63, ASCII letters start at 65, so we can
+	// use this for our benefit and not iterate over labels separately.
+	return n.Length == other.Length && caseInsensitiveEqual(n.Name[:n.Length], other.Name[:other.Length])
 }
