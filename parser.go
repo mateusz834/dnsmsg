@@ -5,11 +5,6 @@ import (
 	"strings"
 )
 
-const (
-	maxEncodedNameLen = 255
-	maxLabelLength    = 63
-)
-
 var (
 	// ErrSectionDone is returned by [Parser.Question] and [Parser.ResourceHeader] when
 	// no more questions/resources are available to parse in the current section.

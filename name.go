@@ -2,13 +2,15 @@ package dnsmsg
 
 import "strings"
 
+const (
+	maxEncodedNameLen = 255
+	maxLabelLength    = 63
+)
+
 type Compression uint8
 
-func (c Compression) canCompress(compressionBuilder bool) bool {
-	if !compressionBuilder || c == CompressionNever {
-		return false
-	}
-	return true
+func (c Compression) canCompress(builderAllowsCompression bool) bool {
+	return builderAllowsCompression && c != CompressionNever
 }
 
 const (
@@ -42,6 +44,92 @@ type NName struct {
 	//
 	// This field should only be set to the constants mentioned before.
 	Compression Compression
+}
+
+func ParseName(name string) (NName, error) {
+	if name == "" {
+		return NName{}, errInvalidName
+	}
+
+	if name == "." {
+		return NName{Length: 1}, nil
+	}
+
+	var n NName
+	n.Length = 1
+
+	labelLengthIndex := 0
+	rooted := false
+
+	for i := 0; i < len(name); i++ {
+		char := name[i]
+		rooted = false
+
+		labelLength := n.Length - uint8(labelLengthIndex) - 1
+		if labelLength > maxLabelLength {
+			return NName{}, errInvalidName
+		}
+
+		if n.Length == maxEncodedNameLen {
+			return NName{}, errInvalidName
+		}
+
+		switch char {
+		case '.':
+			rooted = true
+			if labelLength == 0 {
+				return NName{}, errInvalidName
+			}
+			n.Name[labelLengthIndex] = labelLength
+			labelLengthIndex = int(n.Length)
+			n.Length++
+		case '\\':
+			if len(name) == i+1 {
+				return NName{}, errInvalidName
+			}
+			i++
+			if isDigit(name[i]) {
+				if len(name[i:]) < 3 || !isDigit(name[i+1]) || !isDigit(name[i+2]) {
+					return NName{}, errInvalidName
+				}
+				dddChar, ok := decodeDDD([3]byte([]byte(name[i:])))
+				if !ok {
+					return NName{}, errInvalidName
+				}
+				i += 2
+				n.Name[n.Length] = dddChar
+				n.Length++
+				continue
+			}
+			n.Name[n.Length] = name[i]
+			n.Length++
+		default:
+			n.Name[n.Length] = char
+			n.Length++
+		}
+	}
+
+	if !rooted {
+		if n.Length == maxEncodedNameLen {
+			return NName{}, errInvalidName
+		}
+		labelLength := n.Length - uint8(labelLengthIndex) - 1
+		if labelLength > maxLabelLength {
+			return NName{}, errInvalidName
+		}
+		n.Name[labelLengthIndex] = labelLength
+		n.Length++
+	}
+
+	return n, nil
+}
+
+func MustParseName(name string) NName {
+	n, err := ParseName(name)
+	if err != nil {
+		panic("dnsmsg: MustParseName: " + err.Error())
+	}
+	return n
 }
 
 func (n *NName) String() string {

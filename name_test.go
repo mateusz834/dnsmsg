@@ -2,8 +2,157 @@ package dnsmsg
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 	"testing"
 )
+
+func TestParseName(t *testing.T) {
+	escapes := "\\.\\223\\.\\\\"
+	escapesCharCount := 4
+	label54 = escapes + strings.Repeat("a", 54-escapesCharCount)
+	label63 := escapes + strings.Repeat("a", 63-escapesCharCount)
+	label64 := escapes + strings.Repeat("a", 64-escapesCharCount)
+	label54Encoded := append([]byte{54, '.', 223, '.', '\\'}, strings.Repeat("a", 54-escapesCharCount)...)
+	label63Encoded := append([]byte{63, '.', 223, '.', '\\'}, strings.Repeat("a", 63-escapesCharCount)...)
+
+	cases := []struct {
+		in        string
+		expect    NName
+		expectErr error
+	}{
+		{in: ".", expect: NName{Length: 1}},
+		{in: "a.", expect: NName{Name: [255]byte{1, 'a', 0}, Length: 3}},
+		{in: "aa.", expect: NName{Name: [255]byte{2, 'a', 'a', 0}, Length: 4}},
+		{in: "aA.", expect: NName{Name: [255]byte{2, 'a', 'A', 0}, Length: 4}},
+		{in: "a", expect: NName{Name: [255]byte{1, 'a', 0}, Length: 3}},
+		{in: "aa", expect: NName{Name: [255]byte{2, 'a', 'a', 0}, Length: 4}},
+		{in: "aA", expect: NName{Name: [255]byte{2, 'a', 'A', 0}, Length: 4}},
+
+		{in: "example.com.", expect: NName{Name: [255]byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, Length: 13}},
+		{in: "example.com", expect: NName{Name: [255]byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, Length: 13}},
+		{in: "exAMPle.cOm.", expect: NName{Name: [255]byte{7, 'e', 'x', 'A', 'M', 'P', 'l', 'e', 3, 'c', 'O', 'm', 0}, Length: 13}},
+		{in: "exAMPle.cOm", expect: NName{Name: [255]byte{7, 'e', 'x', 'A', 'M', 'P', 'l', 'e', 3, 'c', 'O', 'm', 0}, Length: 13}},
+
+		{in: "www.example.com.", expect: NName{Name: [255]byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, Length: 17}},
+		{in: "www.example.com", expect: NName{Name: [255]byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, Length: 17}},
+
+		{in: "\\..", expect: NName{Name: [255]byte{1, '.', 0}, Length: 3}},
+		{in: "\\\\.", expect: NName{Name: [255]byte{1, '\\', 0}, Length: 3}},
+		{in: "\\a.", expect: NName{Name: [255]byte{1, 'a', 0}, Length: 3}},
+		{in: "\\-.", expect: NName{Name: [255]byte{1, '-', 0}, Length: 3}},
+		{in: "\\.", expect: NName{Name: [255]byte{1, '.', 0}, Length: 3}},
+		{in: "\\\\", expect: NName{Name: [255]byte{1, '\\', 0}, Length: 3}},
+		{in: "\\a", expect: NName{Name: [255]byte{1, 'a', 0}, Length: 3}},
+		{in: "\\-", expect: NName{Name: [255]byte{1, '-', 0}, Length: 3}},
+
+		{in: "\\000", expect: NName{Name: [255]byte{1, 0, 0}, Length: 3}},
+		{in: "\\001", expect: NName{Name: [255]byte{1, 1, 0}, Length: 3}},
+		{in: "\\041", expect: NName{Name: [255]byte{1, 41, 0}, Length: 3}},
+		{in: "\\189", expect: NName{Name: [255]byte{1, 189, 0}, Length: 3}},
+		{in: "\\241", expect: NName{Name: [255]byte{1, 241, 0}, Length: 3}},
+		{in: "\\255", expect: NName{Name: [255]byte{1, 255, 0}, Length: 3}},
+
+		{in: "\\1.", expectErr: errInvalidName},
+		{in: "\\12.", expectErr: errInvalidName},
+		{in: "\\1a.", expectErr: errInvalidName},
+		{in: "\\12a.", expectErr: errInvalidName},
+		{in: "\\256.", expectErr: errInvalidName},
+		{in: "\\300.", expectErr: errInvalidName},
+
+		{
+			in:     "\\255\\.\\\\a\\a\\c\\..example.com.",
+			expect: NName{Name: [255]byte{7, 255, '.', '\\', 'a', 'a', 'c', '.', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, Length: 21},
+		},
+
+		{in: "example.com..", expectErr: errInvalidName},
+		{in: "example..com.", expectErr: errInvalidName},
+		{in: "www..example.com.", expectErr: errInvalidName},
+
+		{
+			in: label63 + ".go.dev",
+			expect: func() (n NName) {
+				s := append(n.Name[:0], label63Encoded...)
+				s = append(s, 2, 'g', 'o', 3, 'd', 'e', 'v', 0)
+				n.Length = byte(len(s))
+				return
+			}(),
+		},
+		{in: label64 + ".go.dev", expectErr: errInvalidName},
+
+		{
+			in: label63,
+			expect: func() (n NName) {
+				s := append(n.Name[:0], label63Encoded...)
+				s = append(s, 0)
+				n.Length = byte(len(s))
+				return
+			}(),
+		},
+		{
+			in: label63 + ".",
+			expect: func() (n NName) {
+				s := append(n.Name[:0], label63Encoded...)
+				s = append(s, 0)
+				n.Length = byte(len(s))
+				return
+			}(),
+		},
+		{in: label64, expectErr: errInvalidName},
+		{in: label64 + ".", expectErr: errInvalidName},
+
+		// 253B non-rooted name.
+		{
+			in: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%v.go.dev", label63, label54),
+			expect: func() (n NName) {
+				s := append(n.Name[:0], label63Encoded...)
+				s = append(s, label63Encoded...)
+				s = append(s, label63Encoded...)
+				s = append(s, label54Encoded...)
+				s = append(s, 2, 'g', 'o', 3, 'd', 'e', 'v', 0)
+				n.Length = byte(len(s))
+				return
+			}(),
+		},
+
+		// 254B rooted name.
+		{
+			in: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%v.go.dev.", label63, label54),
+			expect: func() (n NName) {
+				s := append(n.Name[:0], label63Encoded...)
+				s = append(s, label63Encoded...)
+				s = append(s, label63Encoded...)
+				s = append(s, label54Encoded...)
+				s = append(s, 2, 'g', 'o', 3, 'd', 'e', 'v', 0)
+				n.Length = byte(len(s))
+				return
+			}(),
+		},
+
+		// 254B non-rooted name.
+		{
+			in:        fmt.Sprintf("%[1]v.%[1]v.%[1]v.%va.go.dev", label63, label54),
+			expectErr: errInvalidName,
+		},
+
+		// 255B rooted name.
+		{
+			in:        fmt.Sprintf("%[1]v.%[1]v.%[1]v.%va.go.dev.", label63, label54),
+			expectErr: errInvalidName,
+		},
+	}
+
+	for _, tt := range cases {
+		name, err := ParseName(tt.in)
+		if err != tt.expectErr || name.Name != tt.expect.Name ||
+			name.Length != tt.expect.Length || name.Compression != tt.expect.Compression {
+			t.Errorf(
+				"ParseName(%q) = (%v, %v); want = (%v, %v)",
+				tt.in, name, err, tt.expect, tt.expectErr,
+			)
+		}
+	}
+}
 
 func TestNameString(t *testing.T) {
 	cases := []struct {
