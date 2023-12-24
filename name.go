@@ -1,6 +1,9 @@
 package dnsmsg
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 const (
 	maxEncodedNameLen = 255
@@ -21,7 +24,7 @@ const (
 	CompressionCompressed    Compression = 64  // name was compressed
 )
 
-type NName struct {
+type Name struct {
 	// Name is non-comparable to prevent possible mistakes, DNS names should
 	// be compared in a case-insensitive way, and the Compression field might
 	// not be equal for the same names.
@@ -46,16 +49,30 @@ type NName struct {
 	Compression Compression
 }
 
-func ParseName(name string) (NName, error) {
+func (n *Name) asSlice() []byte {
+	return n.Name[:n.Length]
+}
+
+var errInvalidName = errors.New("invalid name")
+
+func MustParseName(name string) Name {
+	n, err := ParseName(name)
+	if err != nil {
+		panic("dnsmsg: MustParseName: " + err.Error())
+	}
+	return n
+}
+
+func ParseName(name string) (Name, error) {
 	if name == "" {
-		return NName{}, errInvalidName
+		return Name{}, errInvalidName
 	}
 
 	if name == "." {
-		return NName{Length: 1}, nil
+		return Name{Length: 1}, nil
 	}
 
-	var n NName
+	var n Name
 	n.Length = 1
 
 	labelLengthIndex := 0
@@ -67,34 +84,34 @@ func ParseName(name string) (NName, error) {
 
 		labelLength := n.Length - uint8(labelLengthIndex) - 1
 		if labelLength > maxLabelLength {
-			return NName{}, errInvalidName
+			return Name{}, errInvalidName
 		}
 
 		if n.Length == maxEncodedNameLen {
-			return NName{}, errInvalidName
+			return Name{}, errInvalidName
 		}
 
 		switch char {
 		case '.':
 			rooted = true
 			if labelLength == 0 {
-				return NName{}, errInvalidName
+				return Name{}, errInvalidName
 			}
 			n.Name[labelLengthIndex] = labelLength
 			labelLengthIndex = int(n.Length)
 			n.Length++
 		case '\\':
 			if len(name) == i+1 {
-				return NName{}, errInvalidName
+				return Name{}, errInvalidName
 			}
 			i++
 			if isDigit(name[i]) {
 				if len(name[i:]) < 3 || !isDigit(name[i+1]) || !isDigit(name[i+2]) {
-					return NName{}, errInvalidName
+					return Name{}, errInvalidName
 				}
 				dddChar, ok := decodeDDD([3]byte([]byte(name[i:])))
 				if !ok {
-					return NName{}, errInvalidName
+					return Name{}, errInvalidName
 				}
 				i += 2
 				n.Name[n.Length] = dddChar
@@ -111,11 +128,11 @@ func ParseName(name string) (NName, error) {
 
 	if !rooted {
 		if n.Length == maxEncodedNameLen {
-			return NName{}, errInvalidName
+			return Name{}, errInvalidName
 		}
 		labelLength := n.Length - uint8(labelLengthIndex) - 1
 		if labelLength > maxLabelLength {
-			return NName{}, errInvalidName
+			return Name{}, errInvalidName
 		}
 		n.Name[labelLengthIndex] = labelLength
 		n.Length++
@@ -124,15 +141,22 @@ func ParseName(name string) (NName, error) {
 	return n, nil
 }
 
-func MustParseName(name string) NName {
-	n, err := ParseName(name)
-	if err != nil {
-		panic("dnsmsg: MustParseName: " + err.Error())
-	}
-	return n
+func isDigit(char byte) bool {
+	return char >= '0' && char <= '9'
 }
 
-func (n *NName) String() string {
+func decodeDDD(ddd [3]byte) (uint8, bool) {
+	ddd[0] -= '0'
+	ddd[1] -= '0'
+	ddd[2] -= '0'
+	num := uint16(ddd[0])*100 + uint16(ddd[1])*10 + uint16(ddd[2])
+	if num > 255 {
+		return 0, false
+	}
+	return uint8(num), true
+}
+
+func (n *Name) String() string {
 	if n.Length == 0 {
 		return ""
 	}
@@ -171,8 +195,20 @@ func (n *NName) String() string {
 	return b.String()
 }
 
+func toASCIIDecimal(v byte) []byte {
+	var d [3]byte
+	tmp := v / 100
+	v -= tmp * 100
+	d[0] = tmp + '0'
+	tmp = v / 10
+	v -= tmp * 10
+	d[1] = tmp + '0'
+	d[2] = v + '0'
+	return d[:]
+}
+
 // Equal return true when n and other represents the same name (case-insensitively).
-func (n *NName) Equal(other *NName) bool {
+func (n *Name) Equal(other *Name) bool {
 	// Label Lengths are limited to 63, ASCII letters start at 65, so we can
 	// use this for our benefit and not iterate over labels separately.
 	return n.Length == other.Length && caseInsensitiveEqual(n.Name[:n.Length], other.Name[:other.Length])
@@ -208,7 +244,7 @@ func equalASCIICaseInsensitive(a, b byte) bool {
 // that are badly compressed (pointer to a pointer, pointer to a root name).
 const ptrLoopCount = ((maxEncodedNameLen - 1) / 2)
 
-func (n *NName) unpack(msg []byte, nameStart int) (uint16, error) {
+func (n *Name) unpack(msg []byte, nameStart int) (uint16, error) {
 	var (
 		// length of the raw name, without compression pointers.
 		rawNameLen = uint16(0)

@@ -55,9 +55,9 @@ type EDNS0Header struct {
 }
 
 // AsResourceHeader converts [EDNS0Header] into a [ResourceHeader].
-func (e EDNS0Header) AsResourceHeader() ResourceHeader[RawName] {
-	return ResourceHeader[RawName]{
-		Name:  []byte{0},
+func (e EDNS0Header) AsResourceHeader() ResourceHeader {
+	return ResourceHeader{
+		Name:  Name{Length: 1},
 		Type:  TypeOPT,
 		Class: Class(e.Payload),
 		TTL:   uint32(e.PartialExtendedRCode)<<24 | uint32(e.Version)<<16 | uint32(e.ExtendedFlags),
@@ -69,20 +69,13 @@ var errInvalidEDNS0Header = errors.New("invalid EDNS(0) header")
 // AsEDNS0Header parses the ResourceHeader into an [EDNS0Header].
 //
 // This function should only be called when the h.Type is equal to [TypeOPT].
-func (h *ResourceHeader[T]) AsEDNS0Header() (EDNS0Header, error) {
+func (h *ResourceHeader) AsEDNS0Header() (EDNS0Header, error) {
 	if h.Type != TypeOPT {
 		return EDNS0Header{}, errInvalidOperation
 	}
 
-	switch v := any(h.Name).(type) {
-	case ParserName:
-		if !v.isRoot() {
-			return EDNS0Header{}, errInvalidEDNS0Header
-		}
-	case RawName:
-		if len(v) != 1 {
-			return EDNS0Header{}, errInvalidEDNS0Header
-		}
+	if h.Name.Length != 1 {
+		return EDNS0Header{}, errInvalidEDNS0Header
 	}
 
 	return EDNS0Header{
@@ -193,7 +186,7 @@ func (r *ResourceOPT) EncodingLength() int {
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceOPT(hdr ResourceHeader[RawName], opt ResourceOPT) error {
+func (b *Builder) ResourceOPT(hdr ResourceHeader, opt ResourceOPT) error {
 	optb, err := b.ResourceOPTBuilder(hdr)
 	if err != nil {
 		return err
@@ -224,7 +217,7 @@ func (b *Builder) ResourceOPT(hdr ResourceHeader[RawName], opt ResourceOPT) erro
 // on the Builder until you call [ResourceOPTBuilder.End] or [ResourceOPTBuilder.Remove].
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceOPTBuilder(hdr ResourceHeader[RawName]) (ResourceOPTBuilder, error) {
+func (b *Builder) ResourceOPTBuilder(hdr ResourceHeader) (ResourceOPTBuilder, error) {
 	hdr.Type = TypeOPT
 	fixup, hdrOffset, c, err := b.appendHeaderWithLengthFixupNoInc(hdr, b.maxBufSize)
 	if err != nil {
@@ -386,10 +379,10 @@ func (b *EDNS0OptionBuilder) Remove() {
 }
 
 // Name appends a DNS name to the option.
-func (b *EDNS0OptionBuilder) Name(name RawName, compress bool) error {
+func (b *EDNS0OptionBuilder) Name(name Name, compress bool) error {
 	nameOffset := len(b.b.b.buf)
 	var err error
-	b.b.b.buf, err = b.b.b.nb.appendName(b.b.b.buf, b.b.b.maxBufSize, b.b.b.headerStartOffset, name, compress)
+	b.b.b.buf, err = b.b.b.nb.appendName(b.b.b.buf, b.b.b.maxBufSize, b.b.b.headerStartOffset, name.asSlice(), compress)
 	if err != nil {
 		return err
 	}
@@ -703,7 +696,7 @@ func (p *EDNS0OptionParser) End() error {
 }
 
 // Name parses a single DNS name.
-func (p *EDNS0OptionParser) Name() (ParserName, error) {
+func (p *EDNS0OptionParser) Name() (Name, error) {
 	return p.rd.Name()
 }
 
