@@ -3,530 +3,9 @@ package dnsmsg
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
-	"math"
 	"net/netip"
-	"strconv"
 	"testing"
 )
-
-func TestParserUnpackName(t *testing.T) {
-	var tests = []struct {
-		name string
-
-		msg         []byte
-		parseOffset int
-
-		err    error
-		offset uint8
-		rawLen uint8
-	}{
-		{
-			name:   "example.com",
-			msg:    []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 1, 1, 0},
-			offset: 13,
-			rawLen: 13,
-		},
-		{
-			name:        "example.com",
-			parseOffset: 2,
-			msg:         []byte{32, 8, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 1, 1, 0},
-			offset:      13,
-			rawLen:      13,
-		},
-		{
-			name:   "www.example.com",
-			msg:    []byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 1, 1},
-			offset: 17,
-			rawLen: 17,
-		},
-		{
-			name:        "www.example.com with compression ptr backwards",
-			parseOffset: 16,
-			msg:         []byte{8, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 1, 1, 3, 'w', 'w', 'w', 0xC0, 1},
-			offset:      6,
-			rawLen:      17,
-		},
-		{
-			name:        "www.example.com with compression ptr forwards",
-			parseOffset: 1,
-			msg:         []byte{4, 3, 'w', 'w', 'w', 0xC0, 8, 8, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 1, 1},
-			offset:      6,
-			rawLen:      17,
-		},
-		{
-			name: "255B",
-			msg: func() []byte {
-				var buf []byte
-				a63 := bytes.Repeat([]byte{'a'}, 63)
-				a61 := bytes.Repeat([]byte{'a'}, 61)
-
-				for i := 0; i < 3; i++ {
-					buf = append(buf, byte(len(a63)))
-					buf = append(buf, a63...)
-				}
-
-				buf = append(buf, byte(len(a61)))
-				buf = append(buf, a61...)
-				buf = append(buf, 0)
-
-				if len(buf) != 255 {
-					panic("invalid name")
-				}
-
-				return buf
-			}(),
-			offset: 255,
-			rawLen: 255,
-		},
-		{
-			name: "255B with one compression pointer",
-			msg: func() []byte {
-				var buf []byte
-				a63 := bytes.Repeat([]byte{'a'}, 63)
-				z61 := bytes.Repeat([]byte{'z'}, 61)
-
-				buf = append(buf, byte(len(z61)))
-				buf = append(buf, z61...)
-				buf = append(buf, 0xC0, byte(len(buf))+4)
-
-				buf = append(buf, 32, 32) // random data
-
-				for i := 0; i < 3; i++ {
-					buf = append(buf, byte(len(a63)))
-					buf = append(buf, a63...)
-				}
-				buf = append(buf, 0)
-
-				// +4 (pointer and random data in-between")
-				if len(buf) != 255+4 {
-					panic("invalid name")
-				}
-
-				return buf
-			}(),
-			offset: 64,
-			rawLen: 255,
-		},
-		{
-			name: "256B",
-			msg: func() []byte {
-				var buf []byte
-				a63 := bytes.Repeat([]byte{'a'}, 63)
-				a62 := bytes.Repeat([]byte{'a'}, 62)
-
-				for i := 0; i < 3; i++ {
-					buf = append(buf, byte(len(a63)))
-					buf = append(buf, a63...)
-				}
-
-				buf = append(buf, byte(len(a62)))
-				buf = append(buf, a62...)
-				buf = append(buf, 0)
-
-				if len(buf) != 256 {
-					panic("invalid name")
-				}
-
-				return buf
-			}(),
-			err: errInvalidDNSName,
-		},
-		{
-			name: "256B with one compression pointer",
-			msg: func() []byte {
-				var buf []byte
-				a63 := bytes.Repeat([]byte{'a'}, 63)
-				z62 := bytes.Repeat([]byte{'z'}, 62)
-
-				buf = append(buf, byte(len(z62)))
-				buf = append(buf, z62...)
-				buf = append(buf, 0xC0, byte(len(buf))+4)
-
-				buf = append(buf, 32, 32) // random data
-
-				for i := 0; i < 3; i++ {
-					buf = append(buf, byte(len(a63)))
-					buf = append(buf, a63...)
-				}
-
-				buf = append(buf, 0)
-
-				// +4 (pointer and random data in-between")
-				if len(buf) != 256+4 {
-					panic("invalid name")
-				}
-
-				return buf
-			}(),
-			err: errInvalidDNSName,
-		},
-
-		{name: "smaller name than label length", msg: []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 5, 'c', 'o', 'm', 0}, err: errInvalidDNSName},
-		{name: "missing root label", msg: []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm'}, err: errInvalidDNSName},
-		{name: "pointer loop", msg: []byte{1, 'a', 0xC0, 0}, err: errPtrLoop},
-		{name: "reserved label bit(8) ", msg: []byte{0b10000000}, err: errInvalidDNSName},
-		{name: "reserved label bit(7)", msg: []byte{0b01000000}, err: errInvalidDNSName},
-	}
-
-	for _, v := range tests {
-		msg := Parser{msg: v.msg}
-		n, offset, err := msg.unpackName(v.parseOffset)
-		if err != v.err {
-			t.Fatalf("%v: got err: %v, expected: %v", v.name, err, v.err)
-		}
-
-		if offset != uint16(v.offset) {
-			t.Fatalf("%v: got offset: %v, expected: %v", v.name, offset, v.offset)
-		}
-
-		if rawLen := n.RawLen(); rawLen != v.rawLen {
-			t.Fatalf("%v: got RawLen: %v, expected: %v", v.name, v.rawLen, rawLen)
-		}
-	}
-}
-
-func TestUnpackNameCompressionPtrLoop(t *testing.T) {
-	nb := nameBuilderState{}
-	buf := make([]byte, headerLen, 1024)
-
-	// This creates a 255b name with the maximum (sensible) pointer limit.
-	for i := 3; i <= maxEncodedNameLen; i += 2 {
-		name := make([]byte, maxEncodedNameLen)[:i]
-		for j := 0; j < i-1; j += 2 {
-			name[j] = 1
-			name[j+1] = 'a'
-		}
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, name, true)
-		// append the longest name twice, so that it is also compressed directly.
-		if len(name) == maxEncodedNameLen {
-			buf, _ = nb.appendName(buf, math.MaxInt, 0, name, true)
-		}
-	}
-
-	p := Parser{msg: buf}
-	offset := headerLen
-
-	for len(buf) != offset {
-		_, n, err := p.unpackName(offset)
-		if err != nil {
-			t.Fatalf("failed to unpack name at offset: %v: %v", offset, err)
-		}
-		offset += int(n)
-	}
-
-	// Badly compressed name (Pointer to a Pointer).
-	ptrToPtrNameOffset := len(buf)
-	buf = appendUint16(buf, 0xC000|uint16(ptrToPtrNameOffset-2))
-	p = Parser{msg: buf}
-	_, _, err := p.unpackName(ptrToPtrNameOffset)
-	if err != errPtrLoop {
-		t.Fatalf("unexpected error while unpacking badly packed name (ptr to ptr): %v, expected: %v", err, errPtrLoop)
-	}
-}
-
-func TestParserNameEqual(t *testing.T) {
-	prepNamesSameMsg := func(t *testing.T, buf []byte, n1Start, n2Start int) [2]ParserName {
-		msg := Parser{msg: buf}
-		m1, _, err := msg.unpackName(n1Start)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m2, _, err := msg.unpackName(n2Start)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ret := [2]ParserName{m1, m2}
-		return ret
-	}
-
-	prepNamesDifferentMsg := func(t *testing.T, buf1, buf2 []byte, n1Start, n2Start int) [2]ParserName {
-		msg1, msg2 := Parser{msg: buf1}, Parser{msg: buf2}
-		m1, _, err := msg1.unpackName(n1Start)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m2, _, err := msg2.unpackName(n2Start)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ret := [2]ParserName{m1, m2}
-		return ret
-	}
-
-	var tests = []struct {
-		name string
-
-		names [2]ParserName
-		equal bool
-	}{
-		{
-			name: "(same msg) same nameStart",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 0),
-			equal: true,
-		},
-
-		{
-			name: "(same msg) second name directly points to first name",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				0xC0, 0,
-			}, 0, 13),
-			equal: true,
-		},
-
-		{
-			name: "(same msg) two separate names, without compression pointers",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 13),
-			equal: true,
-		},
-
-		{
-			name: "(same msg) two separate names without compression pointers with different letter case",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'E', 'x', 'A', 'm', 'P', 'l', 'e', 3, 'c', 'O', 'M', 0,
-				7, 'E', 'X', 'a', 'm', 'P', 'l', 'E', 3, 'c', 'o', 'm', 0,
-			}, 0, 13),
-			equal: true,
-		},
-
-		{
-			name: "(same msg) two different names example.com != www.example.com, no pointers",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 13),
-			equal: false,
-		},
-
-		{
-			name: "(same msg) two different names ttt.example.com != www.example.com, no pointers",
-			names: prepNamesSameMsg(t, []byte{
-				3, 't', 't', 't', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 17),
-			equal: false,
-		},
-
-		{
-			name: "(same msg) two different names example.com != www.example.com, with pointers",
-			names: prepNamesSameMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				3, 'w', 'w', 'w', 0xC0, 0,
-			}, 0, 13),
-			equal: false,
-		},
-
-		{
-			name: "(same msg) two different names example.com == example.com, with multiple pointers",
-			names: prepNamesSameMsg(t, []byte{
-				0xC0, 3, 99, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-				0xC0, 0,
-			}, 0, 16),
-			equal: true,
-		},
-
-		{
-			name: "(different msgs) same name, no pointers",
-			names: prepNamesDifferentMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 0),
-			equal: true,
-		},
-
-		{
-			name: "(different msgs) same names, different letter case, no pointers",
-			names: prepNamesDifferentMsg(t, []byte{
-				7, 'E', 'x', 'a', 'M', 'P', 'l', 'e', 3, 'c', 'O', 'm', 0,
-			}, []byte{
-				7, 'E', 'X', 'a', 'm', 'P', 'l', 'E', 3, 'c', 'o', 'm', 0,
-			}, 0, 0),
-			equal: true,
-		},
-
-		{
-			name: "(different msgs) different names, no pointers",
-			names: prepNamesDifferentMsg(t, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, []byte{
-				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, 0, 0),
-			equal: false,
-		},
-
-		{
-			name: "(different msgs) same names, with pointers",
-			names: prepNamesDifferentMsg(t, []byte{
-				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, []byte{
-				7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 3, 'w', 'w', 'w', 0xC0, 0,
-			}, 0, 13),
-			equal: true,
-		},
-
-		{
-			name: "(different msgs) different names, with pointers",
-			names: prepNamesDifferentMsg(t, []byte{
-				3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0,
-			}, []byte{
-				3, 't', 't', 't', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 3, 'w', 'w', 'w', 0xC0, 0,
-			}, 0, 17),
-			equal: false,
-		},
-	}
-
-	for i, v := range tests {
-		for ti, tv := range []string{"n[0].Equal(n[1])", "n[1].Equal(n[0])"} {
-			prefix := fmt.Sprintf("%v: %v: %v:", i, v.name, tv)
-
-			names := v.names
-			if ti == 1 {
-				names[0], names[1] = v.names[1], v.names[0]
-			}
-
-			if eq := names[0].Equal(&names[1]); eq != v.equal {
-				t.Errorf("%v expected: %v, but: %v", prefix, v.equal, eq)
-			}
-		}
-	}
-}
-
-func TestParserNameEqualToStringName(t *testing.T) {
-	newParserName := func(t *testing.T, buf []byte, offset int) ParserName {
-		msg := Parser{msg: buf}
-		m, _, err := msg.unpackName(offset)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return m
-	}
-
-	newSearchName := func(t *testing.T, n, n2 Name) SearchName {
-		s, err := NewSearchName(n, n2)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return s
-	}
-
-	tests := []struct {
-		parserName  ParserName
-		name        Name
-		searchNames []SearchName
-		equal       bool
-	}{
-		{
-			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("example.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com"))},
-			equal:       true,
-		},
-		{
-			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("example.com."),
-			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com."))},
-			equal:       true,
-		},
-		{
-			parserName: newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:       MustNewName("www.example.com"),
-			searchNames: []SearchName{
-				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
-				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
-			},
-			equal: false,
-		},
-		{
-			parserName:  newParserName(t, []byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("example.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("example"), MustNewName("com"))},
-			equal:       false,
-		},
-		{
-			parserName:  newParserName(t, []byte{7, 'E', 'X', 'A', 'M', 'p', 'l', 'E', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("eXAmPle.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("eXAmPle"), MustNewName("com"))},
-			equal:       true,
-		},
-		{
-			parserName: newParserName(t, []byte{7, 'E', 'X', 'A', 'M', 'p', 'l', 'E', 3, 'c', 'o', 'm', 0}, 0),
-			name:       MustNewName("eXAmPle.com."),
-			searchNames: []SearchName{
-				newSearchName(t, Name{}, MustNewName("eXAmPle.com")),
-				newSearchName(t, MustNewName("eXAmPle"), MustNewName("com")),
-			},
-			equal: true,
-		},
-		{
-			parserName:  newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("\\exam\\ple.c\\om"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("\\exam\\ple"), MustNewName("c\\om"))},
-			equal:       true,
-		},
-		{
-			parserName:  newParserName(t, []byte{3, 33, 99, 'z', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("\\033\\099\\" + strconv.Itoa('z') + ".example.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("\\033\\099\\"+strconv.Itoa('z')), MustNewName("example.com"))},
-			equal:       true,
-		},
-		{
-			parserName:  newParserName(t, []byte{3, 0x33, 0x99, 'z', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("\x33\x99\\z.example.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("\x33\x99\\"+strconv.Itoa('z')), MustNewName("example.com"))},
-			equal:       true,
-		},
-		{
-			parserName:  newParserName(t, []byte{3, 'w', 'w', '.', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:        MustNewName("ww\\..example.com"),
-			searchNames: []SearchName{newSearchName(t, MustNewName("ww\\."), MustNewName("example.com"))},
-			equal:       true,
-		},
-		{
-			parserName: newParserName(t, []byte{3, 'w', 'w', '.', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}, 0),
-			name:       MustNewName("ww\\.example.com"),
-			equal:      false,
-		},
-		{
-			parserName: newParserName(t, []byte{7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 2, 3, 'w', 'w', 'w', 0xC0, 0}, 14),
-			name:       MustNewName("www.example.com"),
-			searchNames: []SearchName{
-				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
-				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
-			},
-			equal: true,
-		},
-		{
-			parserName: newParserName(t, []byte{0xC0, 3, 9, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 2, 3, 'w', 'w', 'w', 0xC0, 0}, 17),
-			name:       MustNewName("www.example.com"),
-			searchNames: []SearchName{
-				newSearchName(t, MustNewName("www"), MustNewName("example.com")),
-				newSearchName(t, MustNewName("www.example"), MustNewName("com")),
-			},
-			equal: true,
-		},
-	}
-
-	for _, v := range tests {
-		eq := v.parserName.EqualName(v.name)
-		if eq != v.equal {
-			t.Errorf("ParserName(%#v) == Name(%#v) = %v", v.parserName.String(), v.name.String(), eq)
-		}
-
-		for _, vv := range append(v.searchNames, newSearchName(t, Name{}, v.name)) {
-			eq := v.parserName.EqualSearchName(vv)
-			if eq != v.equal {
-				t.Errorf("ParserName(%#v) == %#v = %v", v.parserName.String(), vv, eq)
-			}
-		}
-	}
-}
 
 func TestParse(t *testing.T) {
 	expect := Header{
@@ -596,8 +75,9 @@ func TestParseQuestion(t *testing.T) {
 		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
-	if !q1.Name.EqualName(MustNewName("example.com")) {
-		t.Errorf(`q1.Name = %v, q1.Name.EqualName(MustNewName("example.com")) = false, want: true`, q1.Name.String())
+	n := MustParseName("example.com")
+	if !q1.Name.Equal(&n) {
+		t.Errorf(`q1.Name = %v, q1.Name.Equal("example.com") = false, want: true`, q1.Name.String())
 	}
 
 	if q1.Type != TypeA {
@@ -613,8 +93,9 @@ func TestParseQuestion(t *testing.T) {
 		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
-	if !q2.Name.EqualName(MustNewName("www.example.com")) {
-		t.Errorf(`q2.Name = %v, q2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, q2.Name.String())
+	n = MustParseName("www.example.com")
+	if !q2.Name.Equal(&n) {
+		t.Errorf(`q2.Name = %v, q2.Name.Equal("www.example.com") = false, want: true`, q2.Name.String())
 	}
 
 	if q2.Type != 45938 {
@@ -708,8 +189,9 @@ func TestParseResourceHeader(t *testing.T) {
 			t.Fatalf("%v section, p.ResourceHeader(): unexpected error: %v", curSectionName, err)
 		}
 
-		if !rhdr.Name.EqualName(MustNewName(expectNames[i])) {
-			t.Errorf(`%v section, rhdr.Name = %v, rhdr.Name.EqualName(MustNewName("%v")) = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
+		n := MustParseName(expectNames[i])
+		if !rhdr.Name.Equal(&n) {
+			t.Errorf(`%v section, rhdr.Name = %v, rhdr.Name.Equal("%v") = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
 		}
 
 		if rhdr.Type != TypeA {
@@ -751,8 +233,9 @@ func TestParseResourceHeader(t *testing.T) {
 		t.Fatalf("p.ResourceHeader(): unexpected error: %v", err)
 	}
 
-	if !rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) {
-		t.Errorf(`rhdr2.Name = %v, rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr2.Name.String())
+	n := MustParseName("smtp.example.com")
+	if !rhdr2.Name.Equal(&n) {
+		t.Errorf(`rhdr2.Name = %v, rhdr2.Name.Equal("smtp.example.com.") = false, want: true`, rhdr2.Name.String())
 	}
 
 	if rhdr2.Type != 45182 {
@@ -780,8 +263,9 @@ func TestParseResourceHeader(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() unexpected error: %v", err)
 	}
 
-	if !rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) {
-		t.Errorf(`rhdr3.Name = %v, rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr3.Name.String())
+	n = MustParseName("smtp.example.com.")
+	if !rhdr3.Name.Equal(&n) {
+		t.Errorf(`rhdr3.Name = %v, rhdr3.Name.Equal("smtp.example.com.") = false, want: true`, rhdr3.Name.String())
 	}
 
 	if rhdr3.Type != 45182 {
@@ -922,8 +406,10 @@ func TestParserRDParser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
-	if !name.EqualName(MustNewName("example.com")) {
-		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
+
+	n := MustParseName("example.com")
+	if !name.Equal(&n) {
+		t.Errorf(`rdp.Name() = %v, rdp.Name().Equal("example.com") = false, want: true`, name.String())
 	}
 
 	u8, err := rdp.Uint8()
@@ -951,8 +437,10 @@ func TestParserRDParser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
-	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+
+	n = MustParseName("www.example.com")
+	if !name.Equal(&n) {
+		t.Errorf(`rdp.Name() = %v, rdp.Name().Equal("www.example.com") = false, want: true`, name.String())
 	}
 
 	u16, err := rdp.Uint16()
@@ -1014,36 +502,36 @@ func TestParserRDParser(t *testing.T) {
 func TestParserInvalidOperation(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 
-	b.Question(Question[RawName]{
-		Name:  MustNewRawName("example.com"),
+	b.Question(Question{
+		Name:  MustParseName("example.com"),
 		Type:  TypeA,
 		Class: ClassIN,
 	})
 
 	for _, nextSection := range []func(){b.StartAnswers, b.StartAuthorities, b.StartAdditionals} {
 		nextSection()
-		hdr := ResourceHeader[RawName]{
-			Name:  MustNewRawName("example.com"),
+		hdr := ResourceHeader{
+			Name:  MustParseName("example.com"),
 			Class: ClassIN,
 			TTL:   60,
 		}
 		b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}})
 		b.ResourceAAAA(hdr, ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()})
-		b.ResourceNS(hdr, ResourceNS[RawName]{NS: MustNewRawName("ns1.example.com")})
-		b.ResourceSOA(hdr, ResourceSOA[RawName]{
-			NS:      MustNewRawName("ns1.example.com"),
-			Mbox:    MustNewRawName("admin.example.com"),
+		b.ResourceNS(hdr, ResourceNS{NS: MustParseName("ns1.example.com")})
+		b.ResourceSOA(hdr, ResourceSOA{
+			NS:      MustParseName("ns1.example.com"),
+			Mbox:    MustParseName("admin.example.com"),
 			Serial:  2022010199,
 			Refresh: 3948793,
 			Retry:   34383744,
 			Expire:  1223999999,
 			Minimum: 123456789,
 		})
-		b.ResourcePTR(hdr, ResourcePTR[RawName]{PTR: MustNewRawName("ns1.example.com")})
+		b.ResourcePTR(hdr, ResourcePTR{PTR: MustParseName("ns1.example.com")})
 		b.ResourceTXT(hdr, ResourceTXT{TXT: [][]byte{[]byte("test"), []byte("test2")}})
 		b.RawResourceTXT(hdr, RawResourceTXT{[]byte{1, 'a', 2, 'b', 'a'}})
-		b.ResourceCNAME(hdr, ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")})
-		b.ResourceMX(hdr, ResourceMX[RawName]{Pref: 100, MX: MustNewRawName("smtp.example.com")})
+		b.ResourceCNAME(hdr, ResourceCNAME{CNAME: MustParseName("www.example.com")})
+		b.ResourceMX(hdr, ResourceMX{Pref: 100, MX: MustParseName("smtp.example.com")})
 		b.ResourceOPT(hdr, ResourceOPT{Options: []EDNS0Option{
 			&EDNS0ClientSubnet{Family: AddressFamilyIPv4, SourcePrefixLength: 2, ScopePrefixLength: 3, Address: []byte{192, 0, 2, 1}},
 			&EDNS0Cookie{
@@ -1235,14 +723,14 @@ func TestParserInvalidOperation(t *testing.T) {
 
 func FuzzParser(f *testing.F) {
 	b := StartBuilder(nil, 0, 0)
-	b.Question(Question[RawName]{
-		Name:  MustNewRawName("example.com"),
+	b.Question(Question{
+		Name:  MustParseName("example.com"),
 		Type:  TypeA,
 		Class: ClassIN,
 	})
 	b.StartAnswers()
-	b.ResourceA(ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
+	b.ResourceA(ResourceHeader{
+		Name:  MustParseName("example.com"),
 		Class: ClassIN,
 		TTL:   60,
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})

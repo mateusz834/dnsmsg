@@ -80,8 +80,8 @@ func TestEDNS0Header(t *testing.T) {
 	b.StartAnswers()
 	b.StartAuthorities()
 	b.StartAdditionals()
-	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
-		Name: MustNewRawName("example.com"),
+	rdb, err := b.RDBuilder(ResourceHeader{
+		Name: MustParseName("example.com"),
 		Type: TypeOPT,
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ func TestEDNS0Header(t *testing.T) {
 		t.Fatalf("p.ResourceHeader().AsEDNS0Header() unexpected error: %v, want %v", err, errInvalidEDNS0Header)
 	}
 
-	edns0ResHdr.Name = MustNewRawName("example.com")
+	edns0ResHdr.Name = MustParseName("example.com")
 	if _, err = edns0ResHdr.AsEDNS0Header(); err != errInvalidEDNS0Header {
 		t.Fatalf("%#v.AsEDNS0Header() unexpected error: %v, want: %v", edns0ResHdr, err, errInvalidEDNS0Header)
 	}
@@ -147,8 +147,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 
@@ -206,8 +206,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 
@@ -248,8 +248,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 		t.Fatalf("changes caused by ResourceOPTBuilder visible before End()")
 	}
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 
@@ -264,8 +264,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 		t.Fatalf("changes caused by ResourceOPTBuilder visible before End()")
 	}
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 	optb1.Remove()
@@ -284,8 +284,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 
@@ -311,7 +311,7 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 		})
 	})
 
-	if err := optb2.Name(MustNewRawName("example.com"), false); err != nil {
+	if err := optb2.Name(MustParseName("example.com"), false); err != nil {
 		t.Fatalf(`optb2.Name(MustNewRawName("example.com") unexpected error: %v`, err)
 	}
 	if l := optb2.Length(); l != 13 {
@@ -323,16 +323,16 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 	if l := optsb.Length(); l != beforeOptResourceLength {
 		t.Fatalf("optsb.Length() = %v, want: %v", l, beforeOptResourceLength)
 	}
-	if err := optb2.Name(MustNewRawName("example.com"), true); err != nil {
+	if err := optb2.Name(MustParseName("example.com"), true); err != nil {
 		t.Fatalf(`optb2.Name(MustNewRawName("example.com", true)) unexpected error: %v`, err)
 	}
 	if l := optb2.Length(); l != 15 {
 		t.Fatalf("optsb.Length() = %v, want: 15", l)
 	}
-	if err := optb2.Name(MustNewRawName("www.example.com"), true); err != nil {
+	if err := optb2.Name(MustParseName("www.example.com"), true); err != nil {
 		t.Fatalf(`optb2.Name(MustNewRawName("www.example.com", true)) unexpected error: %v`, err)
 	}
-	if err := optb2.Name(MustNewRawName("www.example.com"), false); err != nil {
+	if err := optb2.Name(MustParseName("www.example.com"), false); err != nil {
 		t.Fatalf(`optb2.Name(MustNewRawName("www.example.com", false)) unexpected error: %v`, err)
 	}
 	if err := optb2.Uint8(11); err != nil {
@@ -357,8 +357,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 		t.Fatalf("optsb.Length() = %v, want: %v", l, beforeOptResourceLength)
 	}
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 	expectPanic("optsb.ClientSubnet()", func() {
@@ -387,8 +387,8 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 		t.Fatalf("changes caused by EDNS0OptionBuilder visible before End()")
 	}
 	expectPanic("b.ResourceA()", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	})
 	optsb.End()
@@ -603,12 +603,13 @@ func TestResourceOPTBuilderAndParser(t *testing.T) {
 	}
 }
 
-func expectParserName(t *testing.T, prefix string, name ParserName, expectNameAsStr string, comressed bool) {
-	if !bytes.Equal(MustNewRawName(expectNameAsStr), name.AsRawName()) {
+func expectParserName(t *testing.T, prefix string, name Name, expectNameAsStr string, comressed bool) {
+	if !bytes.Equal(nameAsSlice(expectNameAsStr), name.asSlice()) {
 		t.Fatalf("%v = %v, want: %v", prefix, name.String(), expectNameAsStr)
 	}
-	if name.Compressed() != comressed {
-		t.Fatalf("%v.Compressed() = %v, want: %v", prefix, name.Compressed(), comressed)
+	c := name.Compression == CompressionCompressed
+	if c != comressed {
+		t.Fatalf("%v.Compressed = %v, want: %v", prefix, c, comressed)
 	}
 }
 
@@ -645,8 +646,8 @@ func TestResourceOPTEncodingLength(t *testing.T) {
 	b.StartAnswers()
 
 	for {
-		err := b.ResourceA(ResourceHeader[RawName]{
-			Name: MustNewRawName("example.com"),
+		err := b.ResourceA(ResourceHeader{
+			Name: MustParseName("example.com"),
 		}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 		if err != nil {
 			if err == ErrTruncated {
@@ -664,8 +665,8 @@ func TestResourceOPTEncodingLength(t *testing.T) {
 		t.Fatalf("b.ResourceOPT() unexpected error: %v", err)
 	}
 
-	err := b.ResourceA(ResourceHeader[RawName]{
-		Name: MustNewRawName("example.com"),
+	err := b.ResourceA(ResourceHeader{
+		Name: MustParseName("example.com"),
 	}, ResourceA{A: [4]byte{192, 0, 2, 1}})
 	if err != ErrTruncated {
 		t.Fatalf("b.ResourceA() unexpected error: %v, want: %v", err, ErrTruncated)

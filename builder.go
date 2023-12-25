@@ -20,421 +20,6 @@ var (
 	ErrTruncated = errors.New("message size limit reached")
 )
 
-func MakeQuery[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T]) []byte {
-	// Header
-	msg = appendUint16(msg, id)
-	msg = appendUint16(msg, uint16(flags))
-	msg = appendUint16(msg, 1)
-	msg = appendUint16(msg, 0)
-	msg = appendUint16(msg, 0)
-	msg = appendUint16(msg, 0)
-
-	// Question
-	msg = appendName(msg, q.Name)
-	msg = appendUint16(msg, uint16(q.Type))
-	msg = appendUint16(msg, uint16(q.Class))
-
-	return msg
-}
-
-func MakeQueryWithEDNS0Header[T RawName | ParserName | Name | SearchName](msg []byte, id uint16, flags Flags, q Question[T], edns0 EDNS0Header) []byte {
-	// Header
-	msg = appendUint16(msg, id)
-	msg = appendUint16(msg, uint16(flags))
-	msg = appendUint16(msg, 1)
-	msg = appendUint16(msg, 0)
-	msg = appendUint16(msg, 0)
-	msg = appendUint16(msg, 1)
-
-	// Question
-	msg = appendName(msg, q.Name)
-	msg = appendUint16(msg, uint16(q.Type))
-	msg = appendUint16(msg, uint16(q.Class))
-
-	// EDNS0
-	msg = append(msg, 0) // root name
-	msg = appendUint16(msg, uint16(TypeOPT))
-	msg = appendUint16(msg, uint16(edns0.Payload))
-
-	msg = appendUint32(msg, uint32(edns0.PartialExtendedRCode)<<24|uint32(edns0.Version)<<16|uint32(edns0.ExtendedFlags))
-	msg = appendUint16(msg, 0)
-	return msg
-}
-
-func isZero[T comparable](t T) bool {
-	return t == *new(T)
-}
-
-func appendName[T RawName | ParserName | Name | SearchName](buf []byte, n T) []byte {
-	switch n := any(n).(type) {
-	case Name:
-		if isZero(n) {
-			panic("cannot use zero value of any name type")
-		}
-		return appendEscapedName(buf, true, n.n)
-	case SearchName:
-		if isZero(n) {
-			panic("cannot use zero value of any name type")
-		}
-		return appendSearchName(buf, n)
-	case ParserName:
-		if isZero(n) {
-			panic("cannot use zero value of any name type")
-		}
-		return n.appendRawName(buf)
-	case RawName:
-		return append(buf, n...)
-	default:
-		panic("internal error: unsupported name type")
-	}
-}
-
-var errInvalidName = errors.New("invalid name")
-
-// Name is a wrapper around a string DNS name representation.
-// Zero value of this type shouldn't be used, unless specified otherwise.
-type Name struct {
-	n string
-}
-
-func (n Name) AsRawName() RawName {
-	return appendEscapedName(make([]byte, 0, maxEncodedNameLen), true, n.n)
-}
-
-// NewName creates a new Name.
-// The name might contain escape characters like: '\DDD' and '\X',
-// where D is a digit and X is any possible character, except digit.
-func NewName(name string) (Name, error) {
-	if !isValidEscapedName(name) {
-		return Name{}, errInvalidName
-	}
-	return Name{n: name}, nil
-}
-
-// MustNewName creates a new Name, panics when it is invalid.
-func MustNewName(name string) Name {
-	n, err := NewName(name)
-	if err != nil {
-		panic("MustNewName: " + err.Error())
-	}
-	return n
-}
-
-func (n Name) String() string {
-	// TODO: the name can be "unsafe", arbitrary bytes are allowed by
-	// NewName, only dots need to be escaped to be treated as the label content
-	// maybe this method should check whether the name is unsafe, and when it it
-	// make it safe (add escapes properly).
-	return n.n
-}
-
-func (n Name) IsRooted() bool {
-	if n.n[len(n.n)-1] != '.' {
-		return false
-	}
-
-	endSlashCount := 0
-	for i := len(n.n) - 2; i > 0; i-- {
-		v := n.n[i]
-		if v != '\\' {
-			endSlashCount++
-			continue
-		}
-		break
-	}
-
-	return endSlashCount%2 != 0
-}
-
-func (n Name) labelCount() int {
-	count := 0
-	if !n.IsRooted() {
-		count++
-	}
-
-	for i := 0; i < len(n.n); i++ {
-		char := n.n[i]
-		switch char {
-		case '\\':
-			i++
-			if isDigit(n.n[i]) {
-				i += 2
-			}
-		case '.':
-			count++
-		}
-	}
-
-	return count
-}
-
-func (n Name) charCount() int {
-	count := 0
-	for i := 0; i < len(n.n); i++ {
-		char := n.n[i]
-		if char == '\\' {
-			i++
-			if isDigit(n.n[i]) {
-				i += 2
-			}
-		}
-		count++
-	}
-	return count
-}
-
-func isValidEscapedName(m string) bool {
-	if m == "" {
-		return false
-	}
-
-	if m == "." {
-		return true
-	}
-
-	labelLength := 0
-	nameLength := 0
-	inEscape := false
-	rooted := false
-
-	for i := 0; i < len(m); i++ {
-		char := m[i]
-		rooted = false
-
-		switch char {
-		case '.':
-			if inEscape {
-				labelLength++
-				inEscape = false
-				continue
-			}
-			if labelLength == 0 || labelLength > maxLabelLength {
-				return false
-			}
-			rooted = true
-			nameLength += labelLength + 1
-			labelLength = 0
-		case '\\':
-			inEscape = !inEscape
-			if !inEscape {
-				labelLength++
-			}
-		default:
-			if inEscape && isDigit(char) {
-				if len(m[i:]) < 3 || !isDigit(m[i+1]) || !isDigit(m[i+2]) {
-					return false
-				}
-				if _, ok := decodeDDD([3]byte{char, m[i+1], m[i+2]}); !ok {
-					return false
-				}
-				i += 2
-			}
-			inEscape = false
-			labelLength++
-		}
-	}
-
-	if !rooted && labelLength > maxLabelLength {
-		return false
-	}
-
-	nameLength += labelLength
-
-	if inEscape {
-		return false
-	}
-
-	if nameLength > 254 || nameLength == 254 && !rooted {
-		return false
-	}
-
-	return true
-}
-
-func appendEscapedName(buf []byte, explicitEndRoot bool, m string) []byte {
-	labelLength := byte(0)
-
-	labelIndex := len(buf)
-	buf = append(buf, 0)
-	lastRoot := false
-
-	if m == "." {
-		return buf
-	}
-
-	for i := 0; i < len(m); i++ {
-		lastRoot = false
-
-		char := m[i]
-		switch char {
-		case '.':
-			buf[labelIndex] = labelLength
-			labelLength = 0
-			labelIndex = len(buf)
-			buf = append(buf, 0)
-			lastRoot = true
-		case '\\':
-			if isDigit(m[i+1]) {
-				labelLength++
-				ddd, _ := decodeDDD([3]byte{m[i+1], m[i+2], m[i+3]})
-				buf = append(buf, ddd)
-				i += 3
-				continue
-			}
-			buf = append(buf, m[i+1])
-			i += 1
-			labelLength++
-		default:
-			labelLength++
-			buf = append(buf, char)
-		}
-	}
-
-	if labelLength != 0 {
-		buf[labelIndex] = labelLength
-	}
-
-	if explicitEndRoot && !lastRoot {
-		buf = append(buf, 0)
-	}
-
-	return buf
-}
-
-func isDigit(char byte) bool {
-	return char >= '0' && char <= '9'
-}
-
-func decodeDDD(ddd [3]byte) (uint8, bool) {
-	ddd[0] -= '0'
-	ddd[1] -= '0'
-	ddd[2] -= '0'
-	num := uint16(ddd[0])*100 + uint16(ddd[1])*10 + uint16(ddd[2])
-	if num > 255 {
-		return 0, false
-	}
-	return uint8(num), true
-}
-
-type SearchNameIterator struct {
-	name          Name
-	search        []Name
-	absoluteFirst bool
-	absoluteDone  bool
-	done          bool
-}
-
-func NewSearchNameIterator(name Name, search []Name, ndots int) SearchNameIterator {
-	if name.IsRooted() {
-		return SearchNameIterator{name: name}
-	}
-	return SearchNameIterator{name, search, name.labelCount() >= ndots, false, false}
-}
-
-func (s *SearchNameIterator) Next() (SearchName, bool) {
-	if s.done {
-		return SearchName{}, false
-	}
-
-	if !s.absoluteDone && s.absoluteFirst {
-		n, err := NewSearchName(Name{}, s.name)
-		if err != nil {
-			panic("internal error")
-		}
-		s.absoluteDone = true
-		return n, true
-	}
-
-	for i, suffix := range s.search {
-		name, err := NewSearchName(s.name, suffix)
-		if err != nil {
-			continue
-		}
-		s.search = s.search[i+1:]
-		return name, false
-	}
-
-	if !s.absoluteDone && !s.absoluteFirst {
-		n, err := NewSearchName(Name{}, s.name)
-		if err != nil {
-			panic("internal error")
-		}
-		s.absoluteDone = true
-		s.done = true
-		return n, true
-	}
-
-	s.done = true
-	return SearchName{}, false
-}
-
-// SearchName is intended for use with search domains, to avoid
-// string concatenations.
-// Zero value of this type shouldn't be used.
-type SearchName struct {
-	prefix Name
-	suffix Name
-}
-
-func (s SearchName) AsRawName() RawName {
-	return appendSearchName(make([]byte, 0, maxEncodedNameLen), s)
-}
-
-// NewSearchName creates a new SearchName.
-// prefix might be a zero value, then the suffix is
-// treated as the entire name, prefix cannot be a rooted name.
-func NewSearchName(prefix, suffix Name) (SearchName, error) {
-	if !isZero(prefix) && prefix.IsRooted() {
-		return SearchName{}, errInvalidName
-	}
-	nameLength := prefix.charCount() + suffix.charCount()
-	if nameLength > 254 || nameLength == 254 && !suffix.IsRooted() {
-		return SearchName{}, errInvalidName
-	}
-	return SearchName{prefix, suffix}, nil
-}
-
-func (n SearchName) String() string {
-	if isZero(n) {
-		return ""
-	}
-	if isZero(n.prefix) {
-		return n.suffix.String()
-	}
-	return n.prefix.String() + "." + n.suffix.String()
-}
-
-func appendSearchName(buf []byte, name SearchName) []byte {
-	return appendEscapedName(appendEscapedName(buf, false, name.prefix.n), true, name.suffix.n)
-}
-
-type RawName []byte
-
-func NewRawName(name string) (RawName, error) {
-	var buf [maxEncodedNameLen]byte
-	return newRawName(&buf, name)
-}
-
-func MustNewRawName(name string) RawName {
-	var buf [maxEncodedNameLen]byte
-	return mustNewRawName(&buf, name)
-}
-
-func mustNewRawName(buf *[maxEncodedNameLen]byte, name string) RawName {
-	if !isValidEscapedName(name) {
-		panic("dnsmsg: MustNewName: invalid dns name")
-	}
-	return appendEscapedName(buf[:0], true, name)
-}
-
-func newRawName(buf *[maxEncodedNameLen]byte, name string) (RawName, error) {
-	// TODO: merge isValid into appendEscapedName
-	if !isValidEscapedName(name) {
-		return nil, errInvalidName
-	}
-	return appendEscapedName(buf[:0], true, name), nil
-}
-
 type section uint8
 
 const (
@@ -618,7 +203,7 @@ func (b *Builder) decResurceSection() {
 // It errors when the amount of questions is equal to 65535.
 //
 // The building section must be set to questions, otherwise it panics.
-func (b *Builder) Question(q Question[RawName]) error {
+func (b *Builder) Question(q Question) error {
 	if b.curSection != sectionQuestions {
 		b.panicInvalidSection()
 	}
@@ -628,7 +213,7 @@ func (b *Builder) Question(q Question[RawName]) error {
 	}
 
 	var err error
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-4, b.headerStartOffset, q.Name, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-4, b.headerStartOffset, q.Name.asSlice(), true)
 	if err != nil {
 		return err
 	}
@@ -643,7 +228,7 @@ func (b *Builder) Question(q Question[RawName]) error {
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
+func (b *Builder) ResourceA(hdr ResourceHeader, a ResourceA) error {
 	hdr.Type = TypeA
 	hdr.Length = 4
 	if err := b.appendHeader(hdr, b.maxBufSize-4); err != nil {
@@ -657,7 +242,7 @@ func (b *Builder) ResourceA(hdr ResourceHeader[RawName], a ResourceA) error {
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) error {
+func (b *Builder) ResourceAAAA(hdr ResourceHeader, aaaa ResourceAAAA) error {
 	hdr.Type = TypeAAAA
 	hdr.Length = 16
 	if err := b.appendHeader(hdr, b.maxBufSize-16); err != nil {
@@ -671,13 +256,13 @@ func (b *Builder) ResourceAAAA(hdr ResourceHeader[RawName], aaaa ResourceAAAA) e
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceNS(hdr ResourceHeader[RawName], ns ResourceNS[RawName]) error {
+func (b *Builder) ResourceNS(hdr ResourceHeader, ns ResourceNS) error {
 	hdr.Type = TypeNS
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
 	}
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ns.NS, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ns.NS.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
@@ -690,13 +275,13 @@ func (b *Builder) ResourceNS(hdr ResourceHeader[RawName], ns ResourceNS[RawName]
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME[RawName]) error {
+func (b *Builder) ResourceCNAME(hdr ResourceHeader, cname ResourceCNAME) error {
 	hdr.Type = TypeCNAME
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
 	}
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, cname.CNAME, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, cname.CNAME.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
@@ -709,20 +294,20 @@ func (b *Builder) ResourceCNAME(hdr ResourceHeader[RawName], cname ResourceCNAME
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceSOA(hdr ResourceHeader[RawName], soa ResourceSOA[RawName]) error {
+func (b *Builder) ResourceSOA(hdr ResourceHeader, soa ResourceSOA) error {
 	hdr.Type = TypeSOA
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
 	}
 
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, soa.NS, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, soa.NS.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
 	}
 
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-20, b.headerStartOffset, soa.Mbox, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize-20, b.headerStartOffset, soa.Mbox.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
@@ -741,13 +326,13 @@ func (b *Builder) ResourceSOA(hdr ResourceHeader[RawName], soa ResourceSOA[RawNa
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourcePTR(hdr ResourceHeader[RawName], ptr ResourcePTR[RawName]) error {
+func (b *Builder) ResourcePTR(hdr ResourceHeader, ptr ResourcePTR) error {
 	hdr.Type = TypePTR
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize)
 	if err != nil {
 		return err
 	}
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ptr.PTR, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, ptr.PTR.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
@@ -760,14 +345,14 @@ func (b *Builder) ResourcePTR(hdr ResourceHeader[RawName], ptr ResourcePTR[RawNa
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceMX(hdr ResourceHeader[RawName], mx ResourceMX[RawName]) error {
+func (b *Builder) ResourceMX(hdr ResourceHeader, mx ResourceMX) error {
 	hdr.Type = TypeMX
 	f, hdrOffset, err := b.appendHeaderWithLengthFixup(hdr, b.maxBufSize-2)
 	if err != nil {
 		return err
 	}
 	b.buf = appendUint16(b.buf, mx.Pref)
-	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, mx.MX, true)
+	b.buf, err = b.nb.appendName(b.buf, b.maxBufSize, b.headerStartOffset, mx.MX.asSlice(), true)
 	if err != nil {
 		b.removeResourceHeader(hdrOffset)
 		return err
@@ -782,7 +367,7 @@ var errInvalidRawTXTResource = errors.New("invalid raw txt resource")
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) RawResourceTXT(hdr ResourceHeader[RawName], txt RawResourceTXT) error {
+func (b *Builder) RawResourceTXT(hdr ResourceHeader, txt RawResourceTXT) error {
 	hdr.Type = TypeTXT
 	if len(txt.TXT) > math.MaxUint16 || !txt.isValid() {
 		return errInvalidRawTXTResource
@@ -804,7 +389,7 @@ var errTooLongTXT = errors.New("too long txt resource")
 // It errors when the amount of resources in the current section is equal to 65535.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) error {
+func (b *Builder) ResourceTXT(hdr ResourceHeader, txt ResourceTXT) error {
 	hdr.Type = TypeTXT
 	totalLength := 0
 	for _, str := range txt.TXT {
@@ -834,12 +419,12 @@ func (b *Builder) ResourceTXT(hdr ResourceHeader[RawName], txt ResourceTXT) erro
 	return nil
 }
 
-func (b *Builder) appendHeader(hdr ResourceHeader[RawName], maxBufSize int) error {
+func (b *Builder) appendHeader(hdr ResourceHeader, maxBufSize int) error {
 	if err := b.incResurceSection(); err != nil {
 		return err
 	}
 	var err error
-	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name.asSlice(), true)
 	if err != nil {
 		b.decResurceSection()
 		return err
@@ -865,13 +450,13 @@ func (f headerLengthFixup) currentlyStoredLength(b *Builder) uint16 {
 	return unpackUint16(b.buf[f-2:])
 }
 
-func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName], maxBufSize int) (headerLengthFixup, int, error) {
+func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader, maxBufSize int) (headerLengthFixup, int, error) {
 	err := b.incResurceSection()
 	if err != nil {
 		return 0, 0, err
 	}
 	nameOffset := len(b.buf)
-	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name.asSlice(), true)
 	if err != nil {
 		b.decResurceSection()
 		return 0, 0, err
@@ -883,7 +468,7 @@ func (b *Builder) appendHeaderWithLengthFixup(hdr ResourceHeader[RawName], maxBu
 	return headerLengthFixup(len(b.buf)), nameOffset, nil
 }
 
-func (b *Builder) appendHeaderWithLengthFixupNoInc(hdr ResourceHeader[RawName], maxBufSize int) (headerLengthFixup, int, *uint16, error) {
+func (b *Builder) appendHeaderWithLengthFixupNoInc(hdr ResourceHeader, maxBufSize int) (headerLengthFixup, int, *uint16, error) {
 	var count *uint16
 	switch b.curSection {
 	case sectionAnswers:
@@ -902,7 +487,7 @@ func (b *Builder) appendHeaderWithLengthFixupNoInc(hdr ResourceHeader[RawName], 
 
 	var err error
 	nameOffset := len(b.buf)
-	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name, true)
+	b.buf, err = b.nb.appendName(b.buf, maxBufSize-10, b.headerStartOffset, hdr.Name.asSlice(), true)
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -926,7 +511,7 @@ func (b *Builder) removeResourceHeader(headerOffset int) {
 // Once a resource is created using the RDBuilder, attempting to use the same RDBuilder again might lead to panics.
 //
 // The building section must NOT be set to questions, otherwise it panics.
-func (b *Builder) RDBuilder(hdr ResourceHeader[RawName]) (RDBuilder, error) {
+func (b *Builder) RDBuilder(hdr ResourceHeader) (RDBuilder, error) {
 	f, hdrOffset, count, err := b.appendHeaderWithLengthFixupNoInc(hdr, b.maxBufSize)
 	if err != nil {
 		return RDBuilder{}, err
@@ -994,10 +579,10 @@ func (b *RDBuilder) Remove() {
 // is reached ([Builder.LimitMessageSize]), an error will be returned.
 // Note: In case of an error, the resource is not removed, and you can still use the RDBuilder safely.
 // The Resource can be removed via the [RDBuilder.Remove] method.
-func (b *RDBuilder) Name(name RawName, compress bool) error {
+func (b *RDBuilder) Name(name Name, compress bool) error {
 	nameOffset := len(b.b.buf)
 	var err error
-	b.b.buf, err = b.b.nb.appendName(b.b.buf, b.b.maxBufSize, b.b.headerStartOffset, name, compress)
+	b.b.buf, err = b.b.nb.appendName(b.b.buf, b.b.maxBufSize, b.b.headerStartOffset, name.asSlice(), compress)
 	if err != nil {
 		return err
 	}

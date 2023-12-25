@@ -7,176 +7,8 @@ import (
 	"math"
 	"net/netip"
 	"reflect"
-	"strings"
 	"testing"
 )
-
-var (
-	escapes          = "\\.\\223\\.\\\\"
-	escapesCharCount = 4
-	label54          = escapes + strings.Repeat("a", 54-2*escapesCharCount) + escapes
-	label63          = escapes + strings.Repeat("a", 63-2*escapesCharCount) + escapes
-	label64          = escapes + strings.Repeat("a", 64-2*escapesCharCount) + escapes
-)
-
-var newNameTests = []struct {
-	name             string
-	ok               bool
-	diferentAsString bool
-}{
-	{name: "", ok: false},
-	{name: "\x00", ok: true, diferentAsString: true},
-	{name: ".", ok: true},
-	{name: "com.", ok: true},
-	{name: "com", ok: true},
-
-	{name: "go.dev", ok: true},
-	{name: "go.dev.", ok: true},
-	{name: "www.go.dev", ok: true},
-	{name: "www.go.dev.", ok: true},
-
-	{name: "www..go.dev", ok: false},
-	{name: ".www.go.dev", ok: false},
-	{name: "..www.go.dev", ok: false},
-	{name: "www.go.dev..", ok: false},
-
-	{name: "www.go.dev\\.", ok: true},
-	{name: "www.go.dev\\..", ok: true},
-	{name: "www.go.dev\\...", ok: false},
-	{name: "www\\..go.dev", ok: true},
-	{name: "www\\...go.dev", ok: false},
-
-	{name: "\\\\www.go.dev.", ok: true},
-	{name: "\\\\www.go.dev.", ok: true},
-	{name: "www.go.dev\\\\\\.", ok: true},
-	{name: "www.go.dev\\\\\\.", ok: true},
-	{name: "\\ww\\ w.go.dev", ok: true, diferentAsString: true},
-	{name: "ww\\w.go.dev", ok: true, diferentAsString: true},
-	{name: "www.go.dev\\\\", ok: true},
-
-	{name: "\\223www.go.dev", ok: true},
-	{name: "\\000www.go.dev", ok: true},
-	{name: "\\255www.go.dev", ok: true},
-
-	{name: "\\256www.go.dev", ok: false},
-	{name: "\\999www.go.dev", ok: false},
-	{name: "\\12www.go.dev", ok: false},
-	{name: "\\1www.go.dev", ok: false},
-	{name: "www.go.dev\\223", ok: true},
-	{name: "www.go.dev\\12", ok: false},
-	{name: "www.go.dev\\1", ok: false},
-	{name: "www.go.dev\\", ok: false},
-
-	{name: label63 + ".go.dev", ok: true},
-	{name: label64 + ".go.dev", ok: false},
-
-	{name: label63, ok: true},
-	{name: label64, ok: false},
-
-	// 253B non-rooted name.
-	{
-		name: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%v.go.dev", label63, label54),
-		ok:   true,
-	},
-
-	// 254B rooted name.
-	{
-		name: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%v.go.dev.", label63, label54),
-		ok:   true,
-	},
-
-	// 254B non-rooted name.
-	{
-		name: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%va.go.dev", label63, label54),
-		ok:   false,
-	},
-
-	// 255B rooted name.
-	{
-		name: fmt.Sprintf("%[1]v.%[1]v.%[1]v.%va.go.dev.", label63, label54),
-		ok:   false,
-	},
-}
-
-func TestNewName(t *testing.T) {
-	for _, v := range newNameTests {
-		_, err := NewName(v.name)
-		expectErr := errInvalidName
-		if v.ok {
-			expectErr = nil
-		}
-		if expectErr != err {
-			t.Errorf("'%v' got error: %v, expected: %v", v.name, err, expectErr)
-		}
-	}
-}
-
-func TestAppendEscapedName(t *testing.T) {
-	for _, v := range newNameTests {
-		n, err := NewName(v.name)
-		if err != nil {
-			continue
-		}
-
-		packedName := appendEscapedName(nil, true, v.name)
-
-		p := Parser{msg: packedName}
-		name := ParserName{m: &p, nameStart: 0}
-		_, err = name.unpack()
-		if err != nil {
-			t.Errorf("'%v' failed while unpacking packed name: %v\n\traw: %v", v.name, err, packedName)
-			continue
-		}
-
-		if !name.EqualName(n) {
-			t.Errorf("'%v' ParserName is not equal to name\n\traw: %v", v.name, packedName)
-			continue
-		}
-
-		if v.diferentAsString {
-			continue
-		}
-
-		expectName := v.name
-		dotAtEnd := expectName[len(expectName)-1] == '.'
-		if !dotAtEnd || (len(expectName) > 2 && dotAtEnd && expectName[len(expectName)-2] == '\\') {
-			expectName += "."
-		}
-
-		if name := name.String(); name != expectName {
-			t.Errorf("'%v' got name: %v, expected: %v\n\traw: %v", v.name, name, expectName, packedName)
-		}
-	}
-}
-
-func TestAppendSearchName(t *testing.T) {
-	n, err := NewSearchName(MustNewName("www"), MustNewName("go.dev"))
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	name := appendName(nil, n)
-	expectName := []byte{3, 'w', 'w', 'w', 2, 'g', 'o', 3, 'd', 'e', 'v', 0}
-	if !bytes.Equal(name, expectName) {
-		t.Fatalf("expected: %v got: %v", expectName, name)
-	}
-}
-
-func BenchmarkIterator(b *testing.B) {
-	name := MustNewName("google.com")
-	search := []Name{MustNewName("com"), MustNewName("com"), MustNewName("internal.google.com"), MustNewName("internal.it.google.com")}
-	for i := 0; i < b.N; i++ {
-		s := NewSearchNameIterator(name, search, 1)
-		for n, ok := s.Next(); ok; n, ok = s.Next() {
-			_ = n
-		}
-	}
-}
-
-func mustNewRawNameValid(name string) RawName {
-	return appendEscapedName(make([]byte, 0, maxEncodedNameLen), true, name)
-}
 
 func BenchmarkBuilderAppendNameSameName(b *testing.B) {
 	buf := make([]byte, headerLen, 512)
@@ -184,9 +16,9 @@ func BenchmarkBuilderAppendNameSameName(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf := buf
 		b := nameBuilderState{}
-		rawName := mustNewRawNameValid("www.example.com")
+		rawName := MustParseName("www.example.com")
 		for i := 0; i < 31; i++ {
-			buf, _ = b.appendName(buf, math.MaxInt, 0, rawName, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, rawName.asSlice(), true)
 		}
 	}
 }
@@ -198,15 +30,15 @@ func BenchmarkBuilderAppendNameAllPointsToFirstName(b *testing.B) {
 		buf := buf
 		b := nameBuilderState{}
 
-		raw1 := mustNewRawNameValid("www.example.com")
-		raw2 := mustNewRawNameValid("example.com")
-		raw3 := mustNewRawNameValid("com")
+		raw1 := MustParseName("www.example.com")
+		raw2 := MustParseName("example.com")
+		raw3 := MustParseName("com")
 
-		buf, _ = b.appendName(buf, math.MaxInt, 0, raw1, true)
+		buf, _ = b.appendName(buf, math.MaxInt, 0, raw1.asSlice(), true)
 		for i := 0; i < 10; i++ {
-			buf, _ = b.appendName(buf, math.MaxInt, 0, raw1, true)
-			buf, _ = b.appendName(buf, math.MaxInt, 0, raw2, true)
-			buf, _ = b.appendName(buf, math.MaxInt, 0, raw3, true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw1.asSlice(), true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw2.asSlice(), true)
+			buf, _ = b.appendName(buf, math.MaxInt, 0, raw3.asSlice(), true)
 		}
 	}
 }
@@ -216,16 +48,26 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable(b *testing.B) {
 	b.ResetTimer()
 	nb := nameBuilderState{}
 	for i := 0; i < b.N; i++ {
+		names := []Name{
+			MustParseName("com"),
+			MustParseName("example.com"),
+			MustParseName("www.example.com"),
+			MustParseName("dfd.www.example.com"),
+			MustParseName("aa.dfd.www.example.com"),
+			MustParseName("zz.aa.dfd.www.example.com"),
+			MustParseName("cc.zz.aa.dfd.www.example.com"),
+			MustParseName("aa.cc.zz.aa.dfd.www.example.com"),
+		}
 		buf := buf
 		nb.reset()
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("www.example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("dfd.www.example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("aa.dfd.www.example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("zz.aa.dfd.www.example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("cc.zz.aa.dfd.www.example.com"), true)
-		buf, _ = nb.appendName(buf, math.MaxInt, 0, mustNewRawNameValid("aa.cc.zz.aa.dfd.www.example.com"), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[0].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[1].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[2].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[3].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[4].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[5].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[6].asSlice(), true)
+		buf, _ = nb.appendName(buf, math.MaxInt, 0, names[7].asSlice(), true)
 	}
 }
 
@@ -247,9 +89,15 @@ func BenchmarkBuilderAppendNameAllDifferentNamesCompressable16Names(b *testing.B
 		builder.reset()
 		buf := buf
 		for _, v := range names {
-			buf, _ = builder.appendName(buf, math.MaxInt, 0, mustNewRawNameValid(v), true)
+			n := MustParseName(v)
+			buf, _ = builder.appendName(buf, math.MaxInt, 0, n.asSlice(), true)
 		}
 	}
+}
+
+func nameAsSlice(s string) []byte {
+	n := MustParseName(s)
+	return n.asSlice()
 }
 
 func TestAppendName(t *testing.T) {
@@ -262,7 +110,7 @@ func TestAppendName(t *testing.T) {
 			name: "one name",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -275,10 +123,10 @@ func TestAppendName(t *testing.T) {
 			name: "four same names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -294,9 +142,9 @@ func TestAppendName(t *testing.T) {
 			name: "three compressable names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -311,10 +159,10 @@ func TestAppendName(t *testing.T) {
 			name: "first root name followed by three compressable names",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -329,9 +177,9 @@ func TestAppendName(t *testing.T) {
 			name: "compress=false",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), false)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -345,20 +193,20 @@ func TestAppendName(t *testing.T) {
 			name: "maxBufSize on first name",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					// TODO: don't panic here.
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				buf, err = b.appendName(buf, 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				buf, err = b.appendName(buf, 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				buf, err = b.appendName(buf, 30, 0, nameAsSlice("example.com."), true)
 				if err != ErrTruncated {
 					panic(err)
 				}
@@ -375,20 +223,20 @@ func TestAppendName(t *testing.T) {
 			name: "maxBufSize",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					// TODO: don't panic here.
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 30, 0, MustNewRawName("example.com."), true)
+				buf, err = b.appendName(buf, 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 30, 0, MustNewRawName("www.example.com."), true)
+				buf, err = b.appendName(buf, 30, 0, nameAsSlice("www.example.com."), true)
 				if err != ErrTruncated {
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 128, 0, MustNewRawName("www.example.com."), true)
+				buf, err = b.appendName(buf, 128, 0, nameAsSlice("www.example.com."), true)
 				if err != nil {
 					panic(err)
 				}
@@ -405,17 +253,17 @@ func TestAppendName(t *testing.T) {
 			name: "maxBufSize entire not compressed second name",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, err := b.appendName(make([]byte, headerLen), 30, 0, MustNewRawName("example.com."), true)
+				buf, err := b.appendName(make([]byte, headerLen), 30, 0, nameAsSlice("example.com."), true)
 				if err != nil {
 					// TODO: don't panic here.
 					panic(err)
 				}
-				n := MustNewRawName("example.net.")
+				n := nameAsSlice("example.net.")
 				buf, err = b.appendName(buf, len(buf)+len(n)-1, 0, n, true)
 				if err != ErrTruncated {
 					panic(err)
 				}
-				buf, err = b.appendName(buf, 128, 0, MustNewRawName("www.example.net"), true)
+				buf, err = b.appendName(buf, 128, 0, nameAsSlice("www.example.net"), true)
 				if err != nil {
 					panic(err)
 				}
@@ -436,11 +284,11 @@ func TestAppendName(t *testing.T) {
 			name: "first name, removeNamesFromCompressionMap",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("com."), true)
 				b.removeNamesFromCompressionMap(0, headerLen)
-				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), false)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -454,13 +302,13 @@ func TestAppendName(t *testing.T) {
 			name: "multiple names, removeNamesFromCompressionMap, with fake name",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("smtp.example.net."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("smtp.example.net."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				b.removeNamesFromCompressionMap(0, headerLen)
-				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, MustNewRawName("smtp.example.net."), true)
+				buf, _ = b.appendName(buf[:headerLen], math.MaxInt, 0, nameAsSlice("smtp.example.net."), true)
 				buf = append(buf, 3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -474,13 +322,13 @@ func TestAppendName(t *testing.T) {
 			name: "after first name, removeNamesFromCompressionMap",
 			build: func() []byte {
 				b := nameBuilderState{}
-				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("example.com."), false)
+				buf, _ := b.appendName(make([]byte, headerLen), math.MaxInt, 0, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("example.com."), false)
 				offset := len(buf)
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				b.removeNamesFromCompressionMap(0, offset)
 				buf = buf[:offset]
-				buf, _ = b.appendName(buf, math.MaxInt, 0, MustNewRawName("www.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, 0, nameAsSlice("www.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -496,14 +344,14 @@ func TestAppendName(t *testing.T) {
 				b := nameBuilderState{}
 				headerStartOffset := 4
 				buf := make([]byte, headerStartOffset+headerLen)
-				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("com."), true)
-				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("example.com."), false)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, nameAsSlice("com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, nameAsSlice("example.com."), false)
 				offset := len(buf)
-				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("w.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, nameAsSlice("w.example.com."), true)
 				b.removeNamesFromCompressionMap(headerStartOffset, offset)
 				buf = buf[:offset]
 				buf = append(buf, 1, 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0)
-				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, MustNewRawName("w.example.com."), true)
+				buf, _ = b.appendName(buf, math.MaxInt, headerStartOffset, nameAsSlice("w.example.com."), true)
 				return buf
 			},
 			expect: append(
@@ -524,7 +372,7 @@ func TestAppendName(t *testing.T) {
 	}
 }
 
-func testAppendCompressed(buf []byte, headerStartOffset, maxBufSize int, compression map[string]uint16, name RawName, compress bool) ([]byte, error) {
+func testAppendCompressed(buf []byte, headerStartOffset, maxBufSize int, compression map[string]uint16, name []byte, compress bool) ([]byte, error) {
 	if len(buf) < headerLen {
 		panic("invalid use of testAppendCompressed")
 	}
@@ -614,10 +462,11 @@ func FuzzAppendName(f *testing.F) {
 		headerStartOffset := int(r.uint16())
 
 		for _, name := range names {
-			n, err := NewRawName(name.name)
+			nn, err := ParseName(name.name)
 			if err != nil {
 				return
 			}
+			n := nn.asSlice()
 			if debugFuzz {
 				encoding := ""
 				for i := 0; i < len(n); i += int(n[i]) + 1 {
@@ -660,7 +509,7 @@ func FuzzAppendName(f *testing.F) {
 
 			var err error
 			offset := len(expect)
-			expect, err = testAppendCompressed(expect, headerStartOffset, maxBufSize, compression, MustNewRawName(name.name), name.compress)
+			expect, err = testAppendCompressed(expect, headerStartOffset, maxBufSize, compression, nameAsSlice(name.name), name.compress)
 
 			if debugFuzz {
 				t.Logf("%v: offset: %v, buf[headerStartOffset:]: %v, err: %v", i, offset, expect[headerStartOffset:], err)
@@ -705,7 +554,7 @@ func FuzzAppendName(f *testing.F) {
 				if debugFuzz {
 					t.Logf("%v: removing last name: %#v at offset: %v", i, name, offset)
 				}
-				testRemoveLastlyCompressedName(expect, compression, headerStartOffset, offset, MustNewRawName(name))
+				testRemoveLastlyCompressedName(expect, compression, headerStartOffset, offset, nameAsSlice(name))
 				expect = expect[:offset]
 				if debugFuzz && j != 0 {
 					t.Logf("%v: buf[headerStartOffset:]: %v", i, expect[headerStartOffset:])
@@ -732,17 +581,19 @@ func FuzzAppendName(f *testing.F) {
 			expectedNameOffset := nameOffsets[0] - headerStartOffset
 			nameOffsets = nameOffsets[1:]
 
-			name, n, err := p.unpackName(p.curOffset)
+			var name Name
+			offset, err := name.unpack(p.msg, p.curOffset)
 			if err != nil {
 				t.Fatalf("failed to unpack name at offset: %v: %v", p.curOffset, err)
 			}
-			if !name.EqualName(MustNewName(expectName)) {
+			expect := MustParseName(expectName)
+			if !bytes.Equal(name.asSlice(), expect.asSlice()) {
 				t.Fatalf("name at offset: %v, is not euqal to: %#v", p.curOffset, expectName)
 			}
 			if expectedNameOffset != p.curOffset {
 				t.Fatalf("name at offset: %v, was expected to be at: %v offset", p.curOffset, expectedNameOffset)
 			}
-			p.curOffset += int(n)
+			p.curOffset += int(offset)
 		}
 
 		got := make([]byte, headerStartOffset+headerLen, headerStartOffset+1024)
@@ -763,7 +614,7 @@ func FuzzAppendName(f *testing.F) {
 
 			var err error
 			offset := len(got)
-			got, err = b.appendName(got, maxBufSize, headerStartOffset, MustNewRawName(name.name), name.compress)
+			got, err = b.appendName(got, maxBufSize, headerStartOffset, nameAsSlice(name.name), name.compress)
 			if debugFuzz {
 				t.Logf("%v: offset: %v, buf[headerStartOffset:]: %v, err: %v", i, offset, got[headerStartOffset:], err)
 			}
@@ -872,8 +723,8 @@ func TestBuilder(t *testing.T) {
 		b.SetFlags(expectHeader.Flags)
 	}
 
-	err := b.Question(Question[RawName]{
-		Name:  MustNewRawName("example.com"),
+	err := b.Question(Question{
+		Name:  MustParseName("example.com"),
 		Type:  TypeA,
 		Class: ClassIN,
 	})
@@ -883,8 +734,8 @@ func TestBuilder(t *testing.T) {
 
 	testAfterAppend("Questions")
 
-	rhdr := ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
+	rhdr := ResourceHeader{
+		Name:  MustParseName("example.com"),
 		Class: ClassIN,
 		TTL:   3600,
 	}
@@ -892,17 +743,17 @@ func TestBuilder(t *testing.T) {
 	var (
 		resourceA    = ResourceA{A: [4]byte{192, 0, 2, 1}}
 		resourceAAAA = ResourceAAAA{AAAA: netip.MustParseAddr("2001:db8::1").As16()}
-		resourceNS   = ResourceNS[RawName]{NS: MustNewRawName("ns1.example.com")}
-		resourceSOA  = ResourceSOA[RawName]{
-			NS:      MustNewRawName("ns1.example.com"),
-			Mbox:    MustNewRawName("admin.example.com"),
+		resourceNS   = ResourceNS{NS: MustParseName("ns1.example.com")}
+		resourceSOA  = ResourceSOA{
+			NS:      MustParseName("ns1.example.com"),
+			Mbox:    MustParseName("admin.example.com"),
 			Serial:  2022010199,
 			Refresh: 3948793,
 			Retry:   34383744,
 			Expire:  1223999999,
 			Minimum: 123456789,
 		}
-		resourcePTR = ResourcePTR[RawName]{PTR: MustNewRawName("1.2.0.192.in-addr.arpa")}
+		resourcePTR = ResourcePTR{PTR: MustParseName("1.2.0.192.in-addr.arpa")}
 		resourceTXT = ResourceTXT{
 			TXT: [][]byte{
 				bytes.Repeat([]byte("a"), 209),
@@ -920,8 +771,8 @@ func TestBuilder(t *testing.T) {
 				return raw
 			}(),
 		}
-		resourceCNAME = ResourceCNAME[RawName]{CNAME: MustNewRawName("www.example.com")}
-		resourceMX    = ResourceMX[RawName]{Pref: 54831, MX: MustNewRawName("smtp.example.com")}
+		resourceCNAME = ResourceCNAME{CNAME: MustParseName("www.example.com")}
+		resourceMX    = ResourceMX{Pref: 54831, MX: MustParseName("smtp.example.com")}
 		resourceOPT   = ResourceOPT{Options: []EDNS0Option{
 			&EDNS0ClientSubnet{Family: AddressFamilyIPv4, SourcePrefixLength: 2, ScopePrefixLength: 3, Address: []byte{192, 0, 2, 1}},
 			&EDNS0Cookie{
@@ -1011,8 +862,9 @@ func TestBuilder(t *testing.T) {
 		t.Fatalf("p.Question() unexpected error: %v", err)
 	}
 
-	if !q.Name.EqualName(MustNewName("example.com")) {
-		t.Errorf(`q.Name = %v, q.Name.EqualName(MustNewName("example.com") = false, want: true`, q.Name.String())
+	n := MustParseName("example.com.")
+	if !q.Name.Equal(&n) {
+		t.Errorf(`q.Name = %v, q.Name.Equal("example.com") = false, want: true`, q.Name.String())
 	}
 
 	if q.Type != TypeA {
@@ -1033,7 +885,8 @@ func TestBuilder(t *testing.T) {
 			t.Errorf("rhdr.Name = %v, rhdr.Name.Equal(&q.Name) = false, want: true", rhdr.Name.String())
 		}
 
-		if !rhdr.Name.EqualName(MustNewName("example.com")) {
+		n := MustParseName("example.com.")
+		if !rhdr.Name.Equal(&n) {
 			t.Errorf(`rhdr.Name = %v, rhdr.Name.Equal(MustNewName("example.com")) = false, want: true`, rhdr.Name.String())
 		}
 
@@ -1161,12 +1014,11 @@ func equalRData(t *testing.T, name string, r1, r2 any) {
 		r1Field := r1val.Field(i)
 		r2Field := r2val.Field(i)
 
-		if rawName, ok := r1Field.Interface().(RawName); ok {
-			parserName := r2Field.Interface().(ParserName)
-			parserNameAsRawname := parserName.AsRawName()
+		if rawName, ok := r1Field.Interface().(Name); ok {
+			parserName := r2Field.Interface().(Name)
 
-			if !bytes.Equal(parserNameAsRawname, rawName) {
-				t.Errorf("%v: %v.%v = %v, want: %v ", name, r1val.Type().Name(), fieldName, parserNameAsRawname, rawName)
+			if !bytes.Equal(parserName.asSlice(), rawName.asSlice()) {
+				t.Errorf("%v: %v.%v = %v, want: %v ", name, r1val.Type().Name(), fieldName, rawName, rawName)
 			}
 
 			continue
@@ -1201,8 +1053,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 512), 0, 0)
 	b.StartAnswers()
 
-	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
-		Name:  MustNewRawName("www.example.com"),
+	rdb, err := b.RDBuilder(ResourceHeader{
+		Name:  MustParseName("www.example.com"),
 		Type:  54839,
 		Class: ClassIN,
 	})
@@ -1211,8 +1063,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name:  MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name:  MustParseName("example.com"),
 			Class: ClassIN,
 		}, ResourceA{})
 	})
@@ -1221,7 +1073,7 @@ func TestBuilderRDBuilder(t *testing.T) {
 		t.Fatalf("changes caused by RDBuilder visible before End()")
 	}
 
-	if err := rdb.Name(MustNewRawName("mx1.example.com"), true); err != nil {
+	if err := rdb.Name(MustParseName("mx1.example.com"), true); err != nil {
 		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
 
@@ -1238,8 +1090,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name:  MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name:  MustParseName("example.com"),
 			Class: ClassIN,
 		}, ResourceA{})
 	})
@@ -1250,8 +1102,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 
 	rdb.Remove()
 
-	rdb, err = b.RDBuilder(ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
+	rdb, err = b.RDBuilder(ResourceHeader{
+		Name:  MustParseName("example.com"),
 		Type:  54839,
 		Class: ClassIN,
 	})
@@ -1264,13 +1116,13 @@ func TestBuilderRDBuilder(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name:  MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name:  MustParseName("example.com"),
 			Class: ClassIN,
 		}, ResourceA{})
 	})
 
-	if err := rdb.Name(MustNewRawName("www.example.com"), true); err != nil {
+	if err := rdb.Name(MustParseName("www.example.com"), true); err != nil {
 		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
 	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
@@ -1284,7 +1136,7 @@ func TestBuilderRDBuilder(t *testing.T) {
 		t.Fatalf("changes caused by RDBuilder visible before End()")
 	}
 
-	if err := rdb.Name(MustNewRawName("smtp.example.com"), false); err != nil {
+	if err := rdb.Name(MustParseName("smtp.example.com"), false); err != nil {
 		t.Fatalf("rb.Name() unexpected error: %v", err)
 	}
 	if len(b.Bytes()) != 12 || b.Length() != 12 || b.Header() != *new(Header) {
@@ -1320,8 +1172,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 	}
 
 	expectPanic("b.ResourceA", func() {
-		b.ResourceA(ResourceHeader[RawName]{
-			Name:  MustNewRawName("example.com"),
+		b.ResourceA(ResourceHeader{
+			Name:  MustParseName("example.com"),
 			Class: ClassIN,
 		}, ResourceA{})
 	})
@@ -1332,8 +1184,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 
 	rdb.End()
 
-	if err := b.ResourceA(ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
+	if err := b.ResourceA(ResourceHeader{
+		Name:  MustParseName("example.com"),
 		Class: ClassIN,
 	}, ResourceA{}); err != nil {
 		t.Fatalf("b.ResourceA() unexpected error: %v", err)
@@ -1376,12 +1228,13 @@ func TestBuilderRDBuilder(t *testing.T) {
 		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 
-	if !name.EqualName(MustNewName("www.example.com")) {
-		t.Errorf(`name = %v, name.EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+	n := MustParseName("www.example.com")
+	if !name.Equal(&n) {
+		t.Errorf(`name = %v, name.Equal("www.example.com") = false, want: true`, name.String())
 	}
 
-	if !name.Compressed() {
-		t.Errorf("name.Compressed() = false, want: true")
+	if name.Compression != CompressionCompressed {
+		t.Errorf("name.Compression = %v, want: Compressed", name.Compression)
 	}
 
 	rawBytes, err := rdp.Bytes(3)
@@ -1399,12 +1252,13 @@ func TestBuilderRDBuilder(t *testing.T) {
 		t.Fatalf("rdp.Name() unexpected error: %v", err)
 	}
 
-	if !name2.EqualName(MustNewName("smtp.example.com")) {
-		t.Errorf(`name2 = %v, name2.EqualName(MustNewName("smtp.example.com")) = false, want: true`, name2.String())
+	n = MustParseName("smtp.example.com.")
+	if !name2.Equal(&n) {
+		t.Errorf(`name2 = %v, name2.Equal("smtp.example.com") = false, want: true`, name2.String())
 	}
 
-	if name2.Compressed() {
-		t.Errorf("name.Compressed() = true, want: false")
+	if name2.Compression != CompressionNotCompressed {
+		t.Errorf("name.Compression = %v, want: NotCompressed", name2.Compression)
 	}
 
 	u8, err := rdp.Uint8()
@@ -1459,8 +1313,8 @@ func TestBuilderRDBuilder(t *testing.T) {
 func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
 	b.StartAnswers()
-	rdb, err := b.RDBuilder(ResourceHeader[RawName]{
-		Name:   MustNewRawName("."),
+	rdb, err := b.RDBuilder(ResourceHeader{
+		Name:   MustParseName("."),
 		Type:   54839,
 		Class:  ClassIN,
 		Length: 100,
@@ -1472,7 +1326,7 @@ func TestBuilderRDBuilderRDataOverflow(t *testing.T) {
 	rdb.Bytes(make([]byte, math.MaxUint16-6))
 	before := b.Bytes()[12:]
 
-	if err := rdb.Name(MustNewRawName("www.example.com"), true); err == nil {
+	if err := rdb.Name(MustParseName("www.example.com"), true); err == nil {
 		t.Fatal("rb.Name(): unexpected success")
 	}
 	if !bytes.Equal(before, b.Bytes()[12:]) {
@@ -1525,16 +1379,16 @@ func TestBuilderReset(t *testing.T) {
 	b := StartBuilder(make([]byte, 0, 128), 0, 0)
 	b.LimitMessageSize(100)
 
-	if err := b.Question(Question[RawName]{
-		Name:  MustNewRawName("example.net"),
+	if err := b.Question(Question{
+		Name:  MustParseName("example.net"),
 		Type:  TypeA,
 		Class: ClassIN,
 	}); err != nil {
 		t.Fatalf("b.Question() returned error: %v", err)
 	}
 
-	hdr := ResourceHeader[RawName]{
-		Name:  MustNewRawName("example.com"),
+	hdr := ResourceHeader{
+		Name:  MustParseName("example.com"),
 		Class: ClassIN,
 	}
 
@@ -1543,24 +1397,24 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
 	b.StartAuthorities()
-	hdr.Name = MustNewRawName("www.example.com")
+	hdr.Name = MustParseName("www.example.com")
 	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
 	b.StartAdditionals()
-	hdr.Name = MustNewRawName("smtp.example.com")
+	hdr.Name = MustParseName("smtp.example.com")
 	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
-	hdr.Name = MustNewRawName("internal.example.com")
+	hdr.Name = MustParseName("internal.example.com")
 	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != ErrTruncated {
 		t.Fatalf("b.ResourceA() returned error: %v, want: %v", err, ErrTruncated)
 	}
 
 	b.Reset(make([]byte, 0, 128), 0, 0)
 
-	if err := b.Question(Question[RawName]{
-		Name:  MustNewRawName("www.example.net"),
+	if err := b.Question(Question{
+		Name:  MustParseName("www.example.net"),
 		Type:  TypeA,
 		Class: ClassIN,
 	}); err != nil {
@@ -1568,21 +1422,21 @@ func TestBuilderReset(t *testing.T) {
 	}
 
 	b.StartAnswers()
-	hdr.Name = MustNewRawName("internal.example.com")
+	hdr.Name = MustParseName("internal.example.com")
 	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
 	b.StartAuthorities()
-	hdr.Name = MustNewRawName("www.example.com")
+	hdr.Name = MustParseName("www.example.com")
 	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
 	b.StartAdditionals()
-	hdr.Name = MustNewRawName("example.com")
+	hdr.Name = MustParseName("example.com")
 	if err := b.ResourceAAAA(hdr, ResourceAAAA{}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
-	hdr.Name = MustNewRawName("www.admin.internal.example.net")
+	hdr.Name = MustParseName("www.admin.internal.example.net")
 	if err := b.ResourceA(hdr, ResourceA{A: [4]byte{192, 0, 2, 1}}); err != nil {
 		t.Fatalf("b.ResourceA() returned error: %v", err)
 	}
@@ -1597,8 +1451,9 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.Question() returned error: %v", err)
 	}
 
-	if !q.Name.EqualName(MustNewName("www.example.net")) {
-		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("www.example.net")) = false, want: true`, q.Name.String())
+	n := MustParseName("www.example.net")
+	if !q.Name.Equal(&n) {
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.Equal("www.example.net") = false, want: true`, q.Name.String())
 	}
 
 	if q.Class != ClassIN {
@@ -1618,8 +1473,9 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() returned error: %v", err)
 	}
 
-	if !hdr1.Name.EqualName(MustNewName("internal.example.com")) {
-		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("internal.example.com")) = false, want: true`, hdr1.Name.String())
+	n = MustParseName("internal.example.com")
+	if !hdr1.Name.Equal(&n) {
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.Equal("internal.example.com") = false, want: true`, hdr1.Name.String())
 	}
 
 	if hdr1.Class != ClassIN {
@@ -1640,8 +1496,9 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() returned error: %v", err)
 	}
 
-	if !hdr2.Name.EqualName(MustNewName("www.example.com")) {
-		t.Fatalf(`hdr2.Name = %v, hdr2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, hdr2.Name.String())
+	n = MustParseName("www.example.com")
+	if !hdr2.Name.Equal(&n) {
+		t.Fatalf(`hdr2.Name = %v, hdr2.Name.Equal("www.example.com") = false, want: true`, hdr2.Name.String())
 	}
 
 	if _, err := p.ResourceAAAA(); err != nil {
@@ -1654,8 +1511,9 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() returned error: %v", err)
 	}
 
-	if !hdr3.Name.EqualName(MustNewName("example.com")) {
-		t.Fatalf(`hdr3.Name = %v, hdr3.Name.EqualName(MustNewName("example.com")) = false, want: true`, hdr3.Name.String())
+	n = MustParseName("example.com")
+	if !hdr3.Name.Equal(&n) {
+		t.Fatalf(`hdr3.Name = %v, hdr3.Name.Equal("example.com") = false, want: true`, hdr3.Name.String())
 	}
 
 	if _, err := p.ResourceAAAA(); err != nil {
@@ -1667,8 +1525,9 @@ func TestBuilderReset(t *testing.T) {
 		t.Fatalf("p.ResourceHeader() returned error: %v", err)
 	}
 
-	if !hdr4.Name.EqualName(MustNewName("www.admin.internal.example.net")) {
-		t.Fatalf(`hdr4.Name = %v, hdr4.Name.EqualName(MustNewName("www.admin.internal.example.net")) = false, want: true`, hdr4.Name.String())
+	n = MustParseName("www.admin.internal.example.net")
+	if !hdr4.Name.Equal(&n) {
+		t.Fatalf(`hdr4.Name = %v, hdr4.Name.Equal("www.admin.internal.example.net") = false, want: true`, hdr4.Name.String())
 	}
 
 	if _, err := p.ResourceA(); err != nil {
@@ -1736,8 +1595,8 @@ func (r *fuzzRand) bytes(n int) []byte {
 	return b
 }
 
-func (r *fuzzRand) rawName() RawName {
-	n, err := NewRawName(string(r.arbitraryAmountOfBytes()))
+func (r *fuzzRand) rawName() Name {
+	n, err := ParseName(string(r.arbitraryAmountOfBytes()))
 	if err != nil {
 		r.t.SkipNow()
 	}
@@ -1787,7 +1646,7 @@ func FuzzBuilder(f *testing.F) {
 			beforeLen := b.Length()
 			before := b.Bytes()
 
-			q := Question[RawName]{
+			q := Question{
 				Name:  r.rawName(),
 				Type:  Type(r.uint16()),
 				Class: Class(r.uint16()),
@@ -1848,7 +1707,7 @@ func FuzzBuilder(f *testing.F) {
 			}
 
 			for r.bool() {
-				hdr := ResourceHeader[RawName]{
+				hdr := ResourceHeader{
 					Name:  r.rawName(),
 					Class: Class(r.uint16()),
 					TTL:   r.uint32(),
@@ -1873,13 +1732,13 @@ func FuzzBuilder(f *testing.F) {
 						t.Logf("b.ResourceAAAA(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 3:
-					res := ResourceNS[RawName]{NS: r.rawName()}
+					res := ResourceNS{NS: r.rawName()}
 					err = b.ResourceNS(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceNS(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 4:
-					res := ResourceSOA[RawName]{
+					res := ResourceSOA{
 						NS:      r.rawName(),
 						Mbox:    r.rawName(),
 						Serial:  r.uint32(),
@@ -1917,13 +1776,13 @@ func FuzzBuilder(f *testing.F) {
 						err = nil
 					}
 				case 7:
-					res := ResourceCNAME[RawName]{CNAME: r.rawName()}
+					res := ResourceCNAME{CNAME: r.rawName()}
 					err = b.ResourceCNAME(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceCNAME(%#v, %#v) = %v", hdr, res, err)
 					}
 				case 8:
-					res := ResourceMX[RawName]{Pref: r.uint16(), MX: r.rawName()}
+					res := ResourceMX{Pref: r.uint16(), MX: r.rawName()}
 					err = b.ResourceMX(hdr, res)
 					if debugFuzz {
 						t.Logf("b.ResourceMX(%#v, %#v) = %v", hdr, res, err)

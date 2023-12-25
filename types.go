@@ -185,14 +185,14 @@ func (h *Header) pack(msg *[headerLen]byte) {
 	packUint16(msg[10:12], h.ARCount)
 }
 
-type Question[T RawName | ParserName | Name | SearchName] struct {
-	Name  T
+type Question struct {
+	Name  Name
 	Type  Type
 	Class Class
 }
 
-type ResourceHeader[T RawName | ParserName] struct {
-	Name   T
+type ResourceHeader struct {
+	Name   Name
 	Type   Type
 	Class  Class
 	TTL    uint32
@@ -203,17 +203,17 @@ type ResourceA struct {
 	A [4]byte
 }
 
-type ResourceNS[T RawName | ParserName] struct {
-	NS T
+type ResourceNS struct {
+	NS Name
 }
 
-type ResourceCNAME[T RawName | ParserName] struct {
-	CNAME T
+type ResourceCNAME struct {
+	CNAME Name
 }
 
-type ResourceSOA[T RawName | ParserName] struct {
-	NS      T
-	Mbox    T
+type ResourceSOA struct {
+	NS      Name
+	Mbox    Name
 	Serial  uint32
 	Refresh uint32
 	Retry   uint32
@@ -221,12 +221,12 @@ type ResourceSOA[T RawName | ParserName] struct {
 	Minimum uint32
 }
 
-type ResourcePTR[T RawName | ParserName] struct {
-	PTR T
+type ResourcePTR struct {
+	PTR Name
 }
 
-type ResourceMX[T RawName | ParserName] struct {
-	MX   T
+type ResourceMX struct {
+	MX   Name
 	Pref uint16
 }
 

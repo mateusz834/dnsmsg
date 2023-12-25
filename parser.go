@@ -2,12 +2,6 @@ package dnsmsg
 
 import (
 	"errors"
-	"strings"
-)
-
-const (
-	maxEncodedNameLen = 255
-	maxLabelLength    = 63
 )
 
 var (
@@ -157,30 +151,31 @@ func (p *Parser) End() error {
 // Returns [ErrSectionDone] when no more questions are available to parse.
 //
 // The parsing section must be set to questions.
-func (m *Parser) Question() (Question[ParserName], error) {
+func (m *Parser) Question() (Question, error) {
 	if m.curSection != sectionQuestions {
-		return Question[ParserName]{}, errInvalidOperation
+		return Question{}, errInvalidOperation
 	}
 
 	if m.remainingQuestions == 0 {
-		return Question[ParserName]{}, ErrSectionDone
+		return Question{}, ErrSectionDone
 	}
 
-	name, offset, err := m.unpackName(m.curOffset)
+	var name Name
+	offset, err := name.unpack(m.msg, m.curOffset)
 	if err != nil {
-		return Question[ParserName]{}, err
+		return Question{}, err
 	}
 
 	tmpOffset := m.curOffset + int(offset)
 
 	if len(m.msg)-tmpOffset < 4 {
-		return Question[ParserName]{}, errInvalidDNSMessage
+		return Question{}, errInvalidDNSMessage
 	}
 
 	m.curOffset = tmpOffset + 4
 	m.remainingQuestions--
 
-	return Question[ParserName]{
+	return Question{
 		Name:  name,
 		Type:  Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2])),
 		Class: Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4])),
@@ -199,9 +194,9 @@ func (m *Parser) Question() (Question[ParserName], error) {
 // current section.
 //
 // The parsing section must not be set to questions.
-func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
+func (m *Parser) ResourceHeader() (ResourceHeader, error) {
 	if m.resourceData {
-		return ResourceHeader[ParserName]{}, errInvalidOperation
+		return ResourceHeader{}, errInvalidOperation
 	}
 
 	var count *uint16
@@ -213,25 +208,26 @@ func (m *Parser) ResourceHeader() (ResourceHeader[ParserName], error) {
 	case sectionAdditionals:
 		count = &m.remainingAddtitionals
 	default:
-		return ResourceHeader[ParserName]{}, errInvalidOperation
+		return ResourceHeader{}, errInvalidOperation
 	}
 
 	if *count == 0 {
-		return ResourceHeader[ParserName]{}, ErrSectionDone
+		return ResourceHeader{}, ErrSectionDone
 	}
 
-	name, offset, err := m.unpackName(m.curOffset)
+	var name Name
+	offset, err := name.unpack(m.msg, m.curOffset)
 	if err != nil {
-		return ResourceHeader[ParserName]{}, err
+		return ResourceHeader{}, err
 	}
 
 	tmpOffset := m.curOffset + int(offset)
 
 	if len(m.msg)-tmpOffset < 10 {
-		return ResourceHeader[ParserName]{}, errInvalidDNSMessage
+		return ResourceHeader{}, errInvalidDNSMessage
 	}
 
-	hdr := ResourceHeader[ParserName]{
+	hdr := ResourceHeader{
 		Name:   name,
 		Type:   Type(unpackUint16(m.msg[tmpOffset : tmpOffset+2])),
 		Class:  Class(unpackUint16(m.msg[tmpOffset+2 : tmpOffset+4])),
@@ -291,72 +287,77 @@ func (m *Parser) ResourceAAAA() (ResourceAAAA, error) {
 //
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeNS].
-func (m *Parser) ResourceNS() (ResourceNS[ParserName], error) {
+func (m *Parser) ResourceNS() (ResourceNS, error) {
 	if !m.resourceData || m.nextResourceType != TypeNS {
-		return ResourceNS[ParserName]{}, errInvalidOperation
+		return ResourceNS{}, errInvalidOperation
 	}
 
-	ns, offset, err := m.unpackName(m.curOffset)
+	var ns Name
+	offset, err := ns.unpack(m.msg, m.curOffset)
 	if err != nil {
-		return ResourceNS[ParserName]{}, err
+		return ResourceNS{}, err
 	}
 
 	if offset != m.nextResourceDataLength {
-		return ResourceNS[ParserName]{}, errInvalidDNSMessage
+		return ResourceNS{}, errInvalidDNSMessage
 	}
 
 	m.resourceData = false
 	m.curOffset += int(offset)
-	return ResourceNS[ParserName]{ns}, nil
+	return ResourceNS{ns}, nil
 }
 
 // ResourceCNAME parses a single CNAME resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeCNAME].
-func (m *Parser) ResourceCNAME() (ResourceCNAME[ParserName], error) {
+func (m *Parser) ResourceCNAME() (ResourceCNAME, error) {
 	if !m.resourceData || m.nextResourceType != TypeCNAME {
-		return ResourceCNAME[ParserName]{}, errInvalidOperation
+		return ResourceCNAME{}, errInvalidOperation
 	}
 
-	name, offset, err := m.unpackName(m.curOffset)
+	var cname Name
+	offset, err := cname.unpack(m.msg, m.curOffset)
 	if err != nil {
-		return ResourceCNAME[ParserName]{}, err
+		return ResourceCNAME{}, err
 	}
 
 	if offset != m.nextResourceDataLength {
-		return ResourceCNAME[ParserName]{}, errInvalidDNSMessage
+		return ResourceCNAME{}, errInvalidDNSMessage
 	}
 
 	m.resourceData = false
 	m.curOffset += int(offset)
-	return ResourceCNAME[ParserName]{name}, nil
+	return ResourceCNAME{cname}, nil
 }
 
 // ResourceSOA parses a single SOA resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeSOA].
-func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
+func (m *Parser) ResourceSOA() (ResourceSOA, error) {
 	if !m.resourceData || m.nextResourceType != TypeSOA {
-		return ResourceSOA[ParserName]{}, errInvalidOperation
+		return ResourceSOA{}, errInvalidOperation
 	}
 
+	var ns Name
+	var mbox Name
+
 	tmpOffset := m.curOffset
-	ns, offset, err := m.unpackName(tmpOffset)
+	offset, err := ns.unpack(m.msg, tmpOffset)
 	if err != nil {
-		return ResourceSOA[ParserName]{}, err
+		return ResourceSOA{}, err
 	}
 	tmpOffset += int(offset)
 
-	mbox, offset, err := m.unpackName(tmpOffset)
+	offset, err = mbox.unpack(m.msg, tmpOffset)
 	if err != nil {
-		return ResourceSOA[ParserName]{}, err
+		return ResourceSOA{}, err
 	}
 	tmpOffset += int(offset)
 
 	if len(m.msg)-tmpOffset < 20 {
-		return ResourceSOA[ParserName]{}, errInvalidDNSMessage
+		return ResourceSOA{}, errInvalidDNSMessage
 	}
 
 	serial := unpackUint32(m.msg[tmpOffset:])
@@ -367,12 +368,12 @@ func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
 	tmpOffset += 20
 
 	if tmpOffset-m.curOffset != int(m.nextResourceDataLength) {
-		return ResourceSOA[ParserName]{}, errInvalidDNSMessage
+		return ResourceSOA{}, errInvalidDNSMessage
 	}
 
 	m.resourceData = false
 	m.curOffset = tmpOffset
-	return ResourceSOA[ParserName]{
+	return ResourceSOA{
 		NS:      ns,
 		Mbox:    mbox,
 		Serial:  serial,
@@ -387,53 +388,56 @@ func (m *Parser) ResourceSOA() (ResourceSOA[ParserName], error) {
 //
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypePTR].
-func (m *Parser) ResourcePTR() (ResourcePTR[ParserName], error) {
+func (m *Parser) ResourcePTR() (ResourcePTR, error) {
 	if !m.resourceData || m.nextResourceType != TypePTR {
-		return ResourcePTR[ParserName]{}, errInvalidOperation
+		return ResourcePTR{}, errInvalidOperation
 	}
 
-	name, offset, err := m.unpackName(m.curOffset)
+	var ptr Name
+	offset, err := ptr.unpack(m.msg, m.curOffset)
 	if err != nil {
-		return ResourcePTR[ParserName]{}, err
+		return ResourcePTR{}, err
 	}
 
 	if offset != m.nextResourceDataLength {
-		return ResourcePTR[ParserName]{}, errInvalidDNSMessage
+		return ResourcePTR{}, errInvalidDNSMessage
 	}
 
 	m.resourceData = false
 	m.curOffset += int(offset)
-	return ResourcePTR[ParserName]{name}, nil
+	return ResourcePTR{ptr}, nil
 }
 
 // ResourceMX parses a single MX resouce data.
 //
 // This method can only be used after [Parser.ResourceHeader]
 // returns a [ResourceHeader] with a Type field equal to [TypeMX].
-func (m *Parser) ResourceMX() (ResourceMX[ParserName], error) {
+func (m *Parser) ResourceMX() (ResourceMX, error) {
 	if !m.resourceData || m.nextResourceType != TypeMX {
-		return ResourceMX[ParserName]{}, errInvalidOperation
+		return ResourceMX{}, errInvalidOperation
 	}
 
 	if len(m.msg)-m.curOffset < 2 {
-		return ResourceMX[ParserName]{}, errInvalidDNSMessage
+		return ResourceMX{}, errInvalidDNSMessage
 	}
 
 	pref := unpackUint16(m.msg[m.curOffset:])
-	name, offset, err := m.unpackName(m.curOffset + 2)
+
+	var mx Name
+	offset, err := mx.unpack(m.msg, m.curOffset+2)
 	if err != nil {
-		return ResourceMX[ParserName]{}, err
+		return ResourceMX{}, err
 	}
 
 	if m.nextResourceDataLength != offset+2 {
-		return ResourceMX[ParserName]{}, errInvalidDNSMessage
+		return ResourceMX{}, errInvalidDNSMessage
 	}
 
 	m.resourceData = false
 	m.curOffset += int(m.nextResourceDataLength)
-	return ResourceMX[ParserName]{
+	return ResourceMX{
 		Pref: pref,
-		MX:   name,
+		MX:   mx,
 	}, nil
 }
 
@@ -475,12 +479,6 @@ func (m *Parser) SkipResourceData() error {
 	return nil
 }
 
-func (m *Parser) unpackName(offset int) (n ParserName, off uint16, err error) {
-	n = ParserName{m: m, nameStart: offset}
-	off, err = n.unpack()
-	return
-}
-
 // RDParser is a resource data parser used to parse custom resources.
 type RDParser struct {
 	m         *Parser
@@ -504,16 +502,17 @@ func (p *RDParser) End() error {
 }
 
 // Name parses a single DNS name.
-func (p *RDParser) Name() (ParserName, error) {
-	name, n, err := p.m.unpackName(p.offset)
+func (p *RDParser) Name() (Name, error) {
+	var n Name
+	offset, err := n.unpack(p.m.msg, p.offset)
 	if err != nil {
-		return ParserName{}, err
+		return Name{}, err
 	}
-	if p.offset+int(n) > p.maxOffset {
-		return ParserName{}, errInvalidDNSMessage
+	if p.offset+int(offset) > p.maxOffset {
+		return Name{}, errInvalidDNSMessage
 	}
-	p.offset += int(n)
-	return name, nil
+	p.offset += int(offset)
+	return n, nil
 }
 
 // AllBytes returns all remaining bytes in p.
@@ -598,308 +597,4 @@ func (m *Parser) RDParser() (RDParser, error) {
 		offset:    offset,
 		maxOffset: m.curOffset,
 	}, nil
-}
-
-// ptrLoopCount represents an upper limit of pointers that we
-// accept in a single DNS name.
-// There is still a poosibilitty of a false positive here, but only for names
-// that are badly compressed (pointer to a pointer, pointer to a root name).
-const ptrLoopCount = ((maxEncodedNameLen - 1) / 2)
-
-// ParserName represents a raw DNS name.
-//
-// It references the underlying message referenced by the [Parser], so
-// ParserName lifetime is bounded to the Parser's lifetime, which created the ParserName.
-// ParserName should not be used after the underlying array of the slice passed to
-// the [Parse] function gets modified.
-type ParserName struct {
-	m *Parser
-
-	nameStart  int
-	rawLen     uint8
-	compressed bool
-}
-
-// Compressed returns true when the name used DNS name compression.
-func (m *ParserName) Compressed() bool {
-	return m.compressed
-}
-
-// RawLen returns the length of the raw DNS name,
-// excluding all of the compression pointers,
-func (m *ParserName) RawLen() uint8 {
-	return m.rawLen
-}
-
-// unpack parses the name, m.m and m.nameStart must be set accordingly
-// before calling this method.
-func (m *ParserName) unpack() (uint16, error) {
-	var (
-		// length of the raw name, without compression pointers.
-		rawNameLen = uint16(0)
-
-		// message offset, length up to the first compression pointer (if any, including it).
-		offset = uint16(0)
-
-		ptrCount = uint8(0)
-	)
-
-	for i := int(m.nameStart); i < len(m.m.msg); {
-		// Compression pointer
-		if m.m.msg[i]&0xC0 == 0xC0 {
-			if ptrCount++; ptrCount > ptrLoopCount {
-				return 0, errPtrLoop
-			}
-
-			if offset == 0 {
-				offset = rawNameLen + 2
-			}
-
-			// Compression pointer is 2 bytes long.
-			if len(m.m.msg) == int(i)+1 {
-				return 0, errInvalidDNSName
-			}
-
-			i = int(uint16(m.m.msg[i]^0xC0)<<8 | uint16(m.m.msg[i+1]))
-			m.compressed = true
-			continue
-		}
-
-		// Two leading bits are reserved, except for compression pointer (above).
-		if m.m.msg[i]&0xC0 != 0 {
-			return 0, errInvalidDNSName
-		}
-
-		if rawNameLen++; rawNameLen > maxEncodedNameLen {
-			return 0, errInvalidDNSName
-		}
-
-		if m.m.msg[i] == 0 {
-			if offset == 0 {
-				offset = rawNameLen
-			}
-			m.rawLen = uint8(rawNameLen)
-			return offset, nil
-		}
-
-		rawNameLen += uint16(m.m.msg[i])
-		i += int(m.m.msg[i]) + 1
-	}
-
-	return 0, errInvalidDNSName
-}
-
-// Equal reports whether m and m2 represents the same name.
-// It does not require identical internal representation of the name.
-// Letters are compared in a case insensitive manner.
-// m an m2 might be created using two different parsers.
-func (m *ParserName) Equal(m2 *ParserName) bool {
-	im1 := m.nameStart
-	im2 := m2.nameStart
-
-	for {
-		// Resolve all compression pointers of m
-		for m.m.msg[im1]&0xC0 == 0xC0 {
-			im1 = int(m.m.msg[im1]^0xC0)<<8 | int(m.m.msg[im1+1])
-		}
-
-		// Resolve all compression pointers of m2
-		for m2.m.msg[im2]&0xC0 == 0xC0 {
-			im2 = int(m2.m.msg[im2]^0xC0)<<8 | int(m2.m.msg[im2+1])
-		}
-
-		// if we point to the same location in the same parser, then it is equal.
-		if m.m == m2.m && im1 == im2 {
-			return true
-		}
-
-		length := int(m.m.msg[im1])
-
-		// different label lengths
-		if length != int(m2.m.msg[im2]) {
-			return false
-		}
-
-		if length == 0 {
-			return true
-		}
-
-		im1++
-		im2++
-		if !caseInsensitiveEqual(m.m.msg[im1:im1+length], m2.m.msg[im2:im2+length]) {
-			return false
-		}
-		im1 += length
-		im2 += length
-	}
-}
-
-func (m *ParserName) isRoot() bool {
-	return m.rawLen == 1
-}
-
-// EqualName reports whether m and m2 represents the same name.
-func (m *ParserName) EqualName(m2 Name) bool {
-	return m.equalName(m2, false)
-}
-
-func (m *ParserName) equalName(m2 Name, updateNameStart bool) bool {
-	im1 := m.nameStart
-	nameOffset := 0
-
-	for {
-		// Resolve all compression pointers of m
-		for m.m.msg[im1]&0xC0 == 0xC0 {
-			im1 = int(m.m.msg[im1]^0xC0)<<8 | int(m.m.msg[im1+1])
-		}
-
-		labelLength := m.m.msg[im1]
-
-		if labelLength == 0 {
-			return len(m2.n) == nameOffset || ((len(m2.n)-nameOffset) == 1 && m2.n[nameOffset] == '.')
-		}
-
-		if updateNameStart && len(m2.n)-nameOffset == 0 {
-			m.nameStart = im1
-			return true
-		}
-
-		im1++
-		for _, v := range m.m.msg[im1 : im1+int(labelLength)] {
-			if len(m2.n)-nameOffset == 0 {
-				return false
-			}
-
-			char := m2.n[nameOffset]
-			nameOffset++
-			if char == '\\' {
-				char = m2.n[nameOffset]
-				nameOffset++
-				if isDigit(char) {
-					char, _ = decodeDDD([3]byte{char, m2.n[nameOffset], m2.n[nameOffset+1]})
-					nameOffset += 2
-				}
-			}
-
-			if !equalASCIICaseInsensitive(char, v) {
-				return false
-			}
-		}
-
-		if len(m2.n)-nameOffset != 0 {
-			if m2.n[nameOffset] != '.' {
-				return false
-			}
-			nameOffset++
-		}
-
-		im1 += int(labelLength)
-	}
-}
-
-// EqualSearchName reports whether m and m2 represents the same name.
-func (m *ParserName) EqualSearchName(m2 SearchName) bool {
-	c := *m
-	return c.equalName(m2.prefix, true) && c.equalName(m2.suffix, false)
-}
-
-// len(a) must be caseInsensitiveEqual to len(b)
-func caseInsensitiveEqual(a []byte, b []byte) bool {
-	for i := 0; i < len(a); i++ {
-		if !equalASCIICaseInsensitive(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func equalASCIICaseInsensitive(a, b byte) bool {
-	const caseDiff = 'a' - 'A'
-
-	if a >= 'a' && a <= 'z' {
-		a -= caseDiff
-	}
-
-	if b >= 'a' && b <= 'z' {
-		b -= caseDiff
-	}
-
-	return a == b
-}
-
-// String returns the human name encoding of m. Dots inside the label
-// (not separating labels) are escaped as '\.', slashes are encoded as '\\',
-// other octets not in range (including) 0x21 through 0xFE are encoded using the \DDD syntax.
-func (m *ParserName) String() string {
-	builder := strings.Builder{}
-	builder.Grow(int(m.RawLen() - 1))
-
-	i := m.nameStart
-	for {
-		if m.m.msg[i]&0xC0 == 0xC0 {
-			i = int(m.m.msg[i]^0xC0)<<8 | int(m.m.msg[i+1])
-			continue
-		}
-
-		if m.m.msg[i] == 0 {
-			if builder.Len() == 0 {
-				builder.WriteByte('.')
-			}
-			return builder.String()
-		}
-
-		for _, v := range m.m.msg[i+1 : i+int(m.m.msg[i])+1] {
-			switch {
-			case v == '.':
-				builder.WriteString("\\.")
-			case v == '\\':
-				builder.WriteString("\\\\")
-			case v < '!' || v > '~':
-				builder.WriteByte('\\')
-				builder.Write(toASCIIDecimal(v))
-			default:
-				builder.WriteByte(v)
-			}
-		}
-
-		builder.WriteByte('.')
-		i += int(m.m.msg[i]) + 1
-	}
-}
-
-func toASCIIDecimal(v byte) []byte {
-	var d [3]byte
-	tmp := v / 100
-	v -= tmp * 100
-	d[0] = tmp + '0'
-	tmp = v / 10
-	v -= tmp * 10
-	d[1] = tmp + '0'
-	d[2] = v + '0'
-	return d[:]
-}
-
-func (m *ParserName) appendRawName(raw []byte) []byte {
-	i := m.nameStart
-	for {
-		if m.m.msg[i]&0xC0 == 0xC0 {
-			i = int(m.m.msg[i]^0xC0)<<8 | int(m.m.msg[i+1])
-			continue
-		}
-
-		if m.m.msg[i] == 0 {
-			return append(raw, 0)
-		}
-
-		raw = append(raw, m.m.msg[i:i+int(m.m.msg[i])+1]...)
-		i += int(m.m.msg[i]) + 1
-	}
-}
-
-func (m *ParserName) appendRawNameNoInline(raw []byte) []byte {
-	return m.appendRawName(raw)
-}
-
-func (m *ParserName) AsRawName() RawName {
-	return m.appendRawNameNoInline(make([]byte, 0, maxEncodedNameLen))
 }
