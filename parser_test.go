@@ -77,7 +77,7 @@ func TestParseQuestion(t *testing.T) {
 
 	n := MustParseName("example.com")
 	if !q1.Name.Equal(&n) {
-		t.Errorf(`q1.Name = %v, q1.Name.EqualName(MustNewName("example.com")) = false, want: true`, q1.Name.String())
+		t.Errorf(`q1.Name = %v, q1.Name.Equal("example.com") = false, want: true`, q1.Name.String())
 	}
 
 	if q1.Type != TypeA {
@@ -95,7 +95,7 @@ func TestParseQuestion(t *testing.T) {
 
 	n = MustParseName("www.example.com")
 	if !q2.Name.Equal(&n) {
-		t.Errorf(`q2.Name = %v, q2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, q2.Name.String())
+		t.Errorf(`q2.Name = %v, q2.Name.Equal("www.example.com") = false, want: true`, q2.Name.String())
 	}
 
 	if q2.Type != 45938 {
@@ -191,7 +191,7 @@ func TestParseResourceHeader(t *testing.T) {
 
 		n := MustParseName(expectNames[i])
 		if !rhdr.Name.Equal(&n) {
-			t.Errorf(`%v section, rhdr.Name = %v, rhdr.Name.EqualName(MustNewName("%v")) = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
+			t.Errorf(`%v section, rhdr.Name = %v, rhdr.Name.Equal("%v") = false, want: true`, curSectionName, rhdr.Name.String(), expectNames[i])
 		}
 
 		if rhdr.Type != TypeA {
@@ -235,7 +235,7 @@ func TestParseResourceHeader(t *testing.T) {
 
 	n := MustParseName("smtp.example.com")
 	if !rhdr2.Name.Equal(&n) {
-		t.Errorf(`rhdr2.Name = %v, rhdr2.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr2.Name.String())
+		t.Errorf(`rhdr2.Name = %v, rhdr2.Name.Equal("smtp.example.com.") = false, want: true`, rhdr2.Name.String())
 	}
 
 	if rhdr2.Type != 45182 {
@@ -265,7 +265,7 @@ func TestParseResourceHeader(t *testing.T) {
 
 	n = MustParseName("smtp.example.com.")
 	if !rhdr3.Name.Equal(&n) {
-		t.Errorf(`rhdr3.Name = %v, rhdr3.Name.EqualName(MustNewName("smtp.example.com.")) = false, want: true`, rhdr3.Name.String())
+		t.Errorf(`rhdr3.Name = %v, rhdr3.Name.Equal("smtp.example.com.") = false, want: true`, rhdr3.Name.String())
 	}
 
 	if rhdr3.Type != 45182 {
@@ -409,7 +409,7 @@ func TestParserRDParser(t *testing.T) {
 
 	n := MustParseName("example.com")
 	if !name.Equal(&n) {
-		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("example.com")) = false, want: true`, name.String())
+		t.Errorf(`rdp.Name() = %v, rdp.Name().Equal("example.com") = false, want: true`, name.String())
 	}
 
 	u8, err := rdp.Uint8()
@@ -440,7 +440,7 @@ func TestParserRDParser(t *testing.T) {
 
 	n = MustParseName("www.example.com")
 	if !name.Equal(&n) {
-		t.Errorf(`rdp.Name() = %v, rdp.Name().EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+		t.Errorf(`rdp.Name() = %v, rdp.Name().Equal("www.example.com") = false, want: true`, name.String())
 	}
 
 	u16, err := rdp.Uint16()

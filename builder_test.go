@@ -864,7 +864,7 @@ func TestBuilder(t *testing.T) {
 
 	n := MustParseName("example.com.")
 	if !q.Name.Equal(&n) {
-		t.Errorf(`q.Name = %v, q.Name.EqualName(MustNewName("example.com") = false, want: true`, q.Name.String())
+		t.Errorf(`q.Name = %v, q.Name.Equal("example.com") = false, want: true`, q.Name.String())
 	}
 
 	if q.Type != TypeA {
@@ -1230,7 +1230,7 @@ func TestBuilderRDBuilder(t *testing.T) {
 
 	n := MustParseName("www.example.com")
 	if !name.Equal(&n) {
-		t.Errorf(`name = %v, name.EqualName(MustNewName("www.example.com")) = false, want: true`, name.String())
+		t.Errorf(`name = %v, name.Equal("www.example.com") = false, want: true`, name.String())
 	}
 
 	if name.Compression != CompressionCompressed {
@@ -1254,7 +1254,7 @@ func TestBuilderRDBuilder(t *testing.T) {
 
 	n = MustParseName("smtp.example.com.")
 	if !name2.Equal(&n) {
-		t.Errorf(`name2 = %v, name2.EqualName(MustNewName("smtp.example.com")) = false, want: true`, name2.String())
+		t.Errorf(`name2 = %v, name2.Equal("smtp.example.com") = false, want: true`, name2.String())
 	}
 
 	if name2.Compression != CompressionNotCompressed {
@@ -1453,7 +1453,7 @@ func TestBuilderReset(t *testing.T) {
 
 	n := MustParseName("www.example.net")
 	if !q.Name.Equal(&n) {
-		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("www.example.net")) = false, want: true`, q.Name.String())
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.Equal("www.example.net") = false, want: true`, q.Name.String())
 	}
 
 	if q.Class != ClassIN {
@@ -1475,7 +1475,7 @@ func TestBuilderReset(t *testing.T) {
 
 	n = MustParseName("internal.example.com")
 	if !hdr1.Name.Equal(&n) {
-		t.Fatalf(`hdr1.Name = %v, hdr1.Name.EqualName(MustNewName("internal.example.com")) = false, want: true`, hdr1.Name.String())
+		t.Fatalf(`hdr1.Name = %v, hdr1.Name.Equal("internal.example.com") = false, want: true`, hdr1.Name.String())
 	}
 
 	if hdr1.Class != ClassIN {
@@ -1498,7 +1498,7 @@ func TestBuilderReset(t *testing.T) {
 
 	n = MustParseName("www.example.com")
 	if !hdr2.Name.Equal(&n) {
-		t.Fatalf(`hdr2.Name = %v, hdr2.Name.EqualName(MustNewName("www.example.com")) = false, want: true`, hdr2.Name.String())
+		t.Fatalf(`hdr2.Name = %v, hdr2.Name.Equal("www.example.com") = false, want: true`, hdr2.Name.String())
 	}
 
 	if _, err := p.ResourceAAAA(); err != nil {
@@ -1513,7 +1513,7 @@ func TestBuilderReset(t *testing.T) {
 
 	n = MustParseName("example.com")
 	if !hdr3.Name.Equal(&n) {
-		t.Fatalf(`hdr3.Name = %v, hdr3.Name.EqualName(MustNewName("example.com")) = false, want: true`, hdr3.Name.String())
+		t.Fatalf(`hdr3.Name = %v, hdr3.Name.Equal("example.com") = false, want: true`, hdr3.Name.String())
 	}
 
 	if _, err := p.ResourceAAAA(); err != nil {
@@ -1527,7 +1527,7 @@ func TestBuilderReset(t *testing.T) {
 
 	n = MustParseName("www.admin.internal.example.net")
 	if !hdr4.Name.Equal(&n) {
-		t.Fatalf(`hdr4.Name = %v, hdr4.Name.EqualName(MustNewName("www.admin.internal.example.net")) = false, want: true`, hdr4.Name.String())
+		t.Fatalf(`hdr4.Name = %v, hdr4.Name.Equal("www.admin.internal.example.net") = false, want: true`, hdr4.Name.String())
 	}
 
 	if _, err := p.ResourceA(); err != nil {
